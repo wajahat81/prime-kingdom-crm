@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply font-sans bg-prime-bg text-prime-text antialiased tracking-normal;
+  }
+}
+
+/* Custom Utilities for the Enterprise Theme */
+@layer utilities {
+  .page-transition {
+    @apply animate-fade-in;
+  }
+  
+  .card-base {
+    @apply bg-white rounded-xl shadow-card transition-all duration-200 ease-out hover:-translate-y-0.5 hover:shadow-card-hover border border-blue-50;
+  }
+
+  /* Fixed the focus ring color to match the new light theme */
+  .input-base {
+    @apply w-full px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-prime-text transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-prime-primary/20 focus:border-prime-primary placeholder-gray-400;
+  }
+}

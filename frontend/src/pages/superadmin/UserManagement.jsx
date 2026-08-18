@@ -1,128 +1,263 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
+import Button from '../../components/common/Button';
+import Modal from '../../components/common/Modal';
+import PageWrapper from '../../components/layout/PageWrapper';
+import { useAuth } from '../../context/AuthContext';
 
 const UserManagement = () => {
-    const navigate = useNavigate();
-    const [formData, setFormData] = useState({
-        email: '',
-        password: '',
-        full_name: '',
-        role: 'employee'
-    });
+    const { user: currentUser } = useAuth();
+    
+    const [users, setUsers] = useState([]);
+    const [loadingUsers, setLoadingUsers] = useState(true);
+    const [formData, setFormData] = useState({ email: '', password: '', full_name: '', role: 'employee', dialing_id: '' });
+    
+    const [editingUser, setEditingUser] = useState(null);
+    const [editFormData, setEditFormData] = useState({ full_name: '', email: '', password: '', role: '', dialing_id: '' });
     
     const [status, setStatus] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', action: null });
 
-    const handleChange = (e) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
+    const fetchUsers = async () => {
+        try {
+            setLoadingUsers(true);
+            const response = await apiClient.get('/api/v1/users/'); 
+            setUsers(response.data.data || response.data || []);
+        } catch (error) {
+            console.error('Failed to fetch users:', error);
+        } finally {
+            setLoadingUsers(false);
+        }
     };
 
-    const handleSubmit = async (e) => {
+    useEffect(() => { fetchUsers(); }, []);
+
+    const handleAddChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+    const triggerAddUser = (e) => {
         e.preventDefault();
+        setConfirmDialog({
+            isOpen: true,
+            title: "Provision this new user account?",
+            action: async () => {
+                setIsSubmitting(true);
+                try {
+                    await apiClient.post('/api/v1/auth/register', formData);
+                    setStatus({ type: 'success', text: 'User created successfully.' });
+                    setFormData({ email: '', password: '', full_name: '', role: 'employee', dialing_id: '' });
+                    fetchUsers();
+                } catch (error) {
+                    const errorMsg = error.response?.data?.detail || 'Failed to create user.';
+                    setStatus({ type: 'error', text: errorMsg });
+                } finally {
+                    setIsSubmitting(false);
+                    setConfirmDialog({ isOpen: false, title: '', action: null });
+                }
+            }
+        });
+    };
+
+    const triggerDelete = (userId) => {
+        setConfirmDialog({
+            isOpen: true,
+            title: "Permanently delete this account?",
+            action: async () => {
+                try {
+                    await apiClient.delete(`/api/v1/users/${userId}`);
+                    setStatus({ type: 'success', text: 'User deleted successfully.' });
+                    fetchUsers();
+                } catch (error) {
+                    setStatus({ type: 'error', text: 'Failed to delete user.' });
+                } finally {
+                    setConfirmDialog({ isOpen: false, title: '', action: null });
+                }
+            }
+        });
+    };
+
+    const openEditModal = (user) => {
+        setEditingUser(user);
+        setEditFormData({ 
+            full_name: user.full_name || '', 
+            email: user.email || '', 
+            password: '', 
+            role: user.role || 'employee',
+            dialing_id: user.dialing_id || ''
+        });
+    };
+
+    const handleEditChange = (e) => setEditFormData({ ...editFormData, [e.target.name]: e.target.value });
+
+    const handleUpdateUser = async () => {
         setIsSubmitting(true);
         setStatus(null);
-
         try {
-            await apiClient.post('/api/v1/auth/register', formData);
-            setStatus({ type: 'success', text: `Account for ${formData.full_name} created successfully.` });
-            setFormData({ email: '', password: '', full_name: '', role: 'employee' });
+            const payload = { ...editFormData };
+            if (!payload.password) delete payload.password; 
+            if (!payload.dialing_id) payload.dialing_id = null;
+
+            await apiClient.put(`/api/v1/users/${editingUser.id}`, payload);
+            setStatus({ type: 'success', text: 'User updated successfully.' });
+            setEditingUser(null);
+            fetchUsers();
         } catch (error) {
-            setStatus({ 
-                type: 'error', 
-                text: error.response?.data?.detail || 'Failed to create user account.' 
-            });
+            const errorMsg = error.response?.data?.detail || 'Failed to update user.';
+            setStatus({ type: 'error', text: errorMsg });
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    const canEditOrDelete = (targetUser) => {
+        if (!currentUser) return false;
+        if (currentUser.role === 'super_admin') return true; 
+        if (currentUser.role === 'admin') {
+            if (targetUser.id === currentUser.id) return false;
+            if (targetUser.role === 'super_admin') return false; 
+            return true;
+        }
+        return false;
+    };
+
     return (
-        <div className="max-w-3xl mx-auto p-8 mt-10 bg-white rounded-lg shadow-md border-t-4 border-purple-600">
-            <div className="flex justify-between items-center mb-8 border-b pb-4">
-                <div>
-                    <h2 className="text-2xl font-bold text-gray-800">System User Management</h2>
-                    <p className="text-gray-500 text-sm">Provision new accounts for employees and administrators.</p>
-                </div>
-                <button
-                    onClick={() => navigate('/dashboard')}
-                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 border rounded hover:bg-gray-50"
-                >
-                    ← Back to Dashboard
-                </button>
+        <PageWrapper title="Manage Users">
+            <Modal 
+                isOpen={confirmDialog.isOpen} 
+                onClose={() => setConfirmDialog({ isOpen: false, title: '', action: null })} 
+                title={confirmDialog.title}
+                onConfirm={confirmDialog.action}
+                confirmText="Proceed"
+            >
+                <p className="text-sm font-medium text-prime-muted">Please confirm you wish to execute this action.</p>
+            </Modal>
+
+            <Modal 
+                isOpen={!!editingUser} 
+                onClose={() => setEditingUser(null)} 
+                title="Update User Profile"
+                onConfirm={handleUpdateUser}
+                confirmText={isSubmitting ? "Saving..." : "Save Changes"}
+            >
+                {editingUser && (
+                    <div className="space-y-4 py-2">
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Full Name</label>
+                            <input type="text" name="full_name" value={editFormData.full_name} onChange={handleEditChange} className="input-base" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Dialing ID (4 Digits)</label>
+                            <input type="text" name="dialing_id" value={editFormData.dialing_id} onChange={handleEditChange} pattern="\d{4}" maxLength="4" placeholder="e.g. 1024" className="input-base" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Email Address</label>
+                            <input type="email" name="email" value={editFormData.email} onChange={handleEditChange} className="input-base" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Change Password</label>
+                            <input type="password" name="password" value={editFormData.password} onChange={handleEditChange} placeholder="Enter new password or leave blank" className="input-base" />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Security Role</label>
+                            <select name="role" value={editFormData.role} onChange={handleEditChange} className="input-base cursor-pointer">
+                                <option value="employee">Agent</option>
+                                <option value="admin">Admin</option>
+                                {currentUser?.role === 'super_admin' && <option value="super_admin">Super Admin</option>}
+                            </select>
+                        </div>
+                    </div>
+                )}
+            </Modal>
+
+            <div className="flex justify-between items-center mb-8 px-2">
+                <h1 className="text-2xl font-bold text-gray-800 tracking-tight">System Users</h1>
+                <Button onClick={fetchUsers} variant="outline" className="rounded-full px-6 text-sm">Refresh List</Button>
             </div>
-            
+
             {status && (
-    <div className={`p-4 mb-6 rounded ${status.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-        {typeof status.text === 'string' ? status.text : 'An error occurred'}
-    </div>
-)}
+                <div className={`px-6 py-3 mb-6 rounded-full text-sm font-medium text-center ${status.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                    {status.text}
+                </div>
+            )}
 
-            <form onSubmit={handleSubmit} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-                        <input 
-                            type="text" 
-                            name="full_name" 
-                            value={formData.full_name} 
-                            onChange={handleChange}
-                            required
-                            className="w-full p-2 border border-gray-300 rounded focus:ring-purple-500 focus:border-purple-500"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Account Role</label>
-                        <select 
-                            name="role" 
-                            value={formData.role} 
-                            onChange={handleChange}
-                            className="w-full p-2 border border-gray-300 rounded focus:ring-purple-500 focus:border-purple-500"
-                        >
-                            <option value="employee">Employee (Agent)</option>
-                            <option value="admin">Admin (Manager)</option>
-                            <option value="super_admin">Super Admin</option>
-                        </select>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                <div className="xl:col-span-1">
+                    <div className="card-base p-8 sticky top-24 bg-white">
+                        <h2 className="text-lg font-bold text-prime-text mb-6">Create New Account</h2>
+                        <form onSubmit={triggerAddUser} className="space-y-6">
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Full Name</label>
+                                <input type="text" name="full_name" value={formData.full_name} onChange={handleAddChange} required className="input-base" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Dialing ID (4 Digits)</label>
+                                <input type="text" name="dialing_id" value={formData.dialing_id} onChange={handleAddChange} pattern="\d{4}" maxLength="4" placeholder="e.g. 1024" className="input-base" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Role</label>
+                                <select name="role" value={formData.role} onChange={handleAddChange} className="input-base cursor-pointer">
+                                    <option value="employee">Agent</option>
+                                    <option value="admin">Admin</option>
+                                    {currentUser?.role === 'super_admin' && <option value="super_admin">Super Admin</option>}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Email Address</label>
+                                <input type="email" name="email" value={formData.email} onChange={handleAddChange} required className="input-base" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Temporary Password</label>
+                                <input type="password" name="password" value={formData.password} onChange={handleAddChange} required minLength={8} className="input-base" />
+                            </div>
+                            <Button type="submit" disabled={isSubmitting} variant="primary" className="w-full py-3">Create User</Button>
+                        </form>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-                        <input 
-                            type="email" 
-                            name="email" 
-                            value={formData.email} 
-                            onChange={handleChange}
-                            required
-                            className="w-full p-2 border border-gray-300 rounded focus:ring-purple-500 focus:border-purple-500"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Temporary Password</label>
-                        <input 
-                            type="password" 
-                            name="password" 
-                            value={formData.password} 
-                            onChange={handleChange}
-                            required
-                            minLength={8}
-                            className="w-full p-2 border border-gray-300 rounded focus:ring-purple-500 focus:border-purple-500"
-                        />
+                <div className="xl:col-span-2">
+                    <div className="card-base flex flex-col min-h-[500px] w-full">
+                        <div className="overflow-x-auto w-full flex-grow">
+                            <table className="min-w-full">
+                                <thead>
+                                    <tr className="border-b border-gray-100">
+                                        <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">User Details</th>
+                                        <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Dialing ID</th>
+                                        <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Role</th>
+                                        <th className="px-4 md:px-6 py-6 text-right text-[13px] font-bold text-gray-400">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white">
+                                    {users.map((u) => (
+                                        <tr key={u.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors group">
+                                            <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                                                <div className="text-sm font-bold text-gray-800">{u.full_name || 'N/A'}</div>
+                                                <div className="text-xs font-medium text-gray-500 mt-0.5">{u.email}</div>
+                                            </td>
+                                            <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-600">
+                                                {u.dialing_id ? `#${u.dialing_id}` : '-'}
+                                            </td>
+                                            <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                                                <span className={`inline-flex items-center px-3 py-1 rounded-full text-[10px] font-bold uppercase bg-gray-100 text-gray-600`}>
+                                                    {u.role ? u.role.replace('_', ' ') : 'employee'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 md:px-6 py-4 whitespace-nowrap text-right">
+                                                {canEditOrDelete(u) && (
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button onClick={() => openEditModal(u)} className="text-gray-300 hover:text-prime-primary p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
+                                                        <button onClick={() => triggerDelete(u.id)} className="text-gray-300 hover:text-red-500 p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                                    </div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
-
-                <div className="pt-4">
-                    <button 
-                        type="submit" 
-                        disabled={isSubmitting}
-                        className="w-full bg-purple-600 text-white font-bold py-3 px-4 rounded hover:bg-purple-700 disabled:opacity-50 transition-colors"
-                    >
-                        {isSubmitting ? 'Provisioning...' : 'Create User Account'}
-                    </button>
-                </div>
-            </form>
-        </div>
+            </div>
+        </PageWrapper>
     );
 };
 

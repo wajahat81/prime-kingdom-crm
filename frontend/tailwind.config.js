@@ -8,27 +8,26 @@ export default {
     extend: {
       colors: {
         prime: {
-          primary: '#3B82F6',   // Vibrant Blue (Blue-500)
-          secondary: '#0EA5E9', // Bright Sky Blue (Sky-500)
-          accent: '#38BDF8',    // Light Accent (Sky-400)
-          bg: '#F4F9FF',        // Very soft, cool blue-tinted background
-          text: '#1E293B',      // Deep slate for readable text
-          muted: '#64748B'      // Soft slate for secondary text
+          primary: '#1A73E8',   // Superwise Vibrant Blue
+          secondary: '#4285F4', // Lighter Blue Hover
+          bg: '#F8F9FA',        // Very light gray background
+          text: '#3C4043',      // Dark slate text
+          muted: '#80868B',     // Gray for secondary text
+          border: '#DADCE0'     // Soft borders
         }
       },
       fontFamily: {
         sans: ['Inter', 'sans-serif'],
       },
       boxShadow: {
-        'card': '0 4px 6px -1px rgba(14, 165, 233, 0.05), 0 2px 4px -1px rgba(14, 165, 233, 0.03)',
-        'card-hover': '0 10px 15px -3px rgba(14, 165, 233, 0.1), 0 4px 6px -2px rgba(14, 165, 233, 0.05)',
+        'card': '0 2px 6px rgba(0,0,0,0.04)',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out forwards',
       },
       keyframes: {
         fadeIn: {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '0%': { opacity: '0', transform: 'translateY(5px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         }
       }

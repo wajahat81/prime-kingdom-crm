@@ -12,6 +12,7 @@ class UserCreate(BaseModel):
     password: str
     full_name: str
     role: str = "employee"
+    dialing_id: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: str

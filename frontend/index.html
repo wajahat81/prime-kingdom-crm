@@ -2,13 +2,17 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <!-- Security: Basic Content Security Policy (CSP) -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http://localhost:8000 https://*.supabase.co; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';">
-    <title>Prime Kingdom CRM</title>
+    <!-- ADD FAVICON (Place your icon.svg or favicon.ico in the public/ folder) -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- FIX MOBILE OVERFLOW AND SCALING -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- ADD META DESCRIPTION -->
+    <meta name="description" content="Prime Kingdom CRM - Modern Enterprise Management and Communication Platform" />
+    
+    <title>Prime Kingdom</title>
   </head>
-  <body>
+  <!-- NO HORIZONTAL SCROLL ENFORCED HERE -->
+  <body class="overflow-x-hidden bg-[#F8F9FA] text-[#3C4043] antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import Button from '../../components/common/Button';
+import PageWrapper from '../../components/layout/PageWrapper';
 
 const CommissionFormulaBuilder = () => {
     const [payoutPerCall, setPayoutPerCall] = useState(15.00);
@@ -13,7 +14,7 @@ const CommissionFormulaBuilder = () => {
 
         try {
             setTimeout(() => {
-                setStatus({ type: 'success', text: 'Commission parameters updated securely across the system.' });
+                setStatus({ type: 'success', text: 'Commission parameters updated securely.' });
                 setIsSubmitting(false);
             }, 600);
         } catch (error) {
@@ -23,50 +24,49 @@ const CommissionFormulaBuilder = () => {
     };
 
     return (
-        <div className="max-w-2xl mx-auto p-10 mt-10 card-base page-transition">
-            <div className="mb-8 border-b border-gray-100 pb-5">
-                <h2 className="text-2xl font-extrabold text-prime-text tracking-tight mb-1">Commission Formula Configuration</h2>
-                <p className="text-sm font-medium text-prime-muted">Adjust the payout variables used by Admins during the end-of-month processing.</p>
-            </div>
-
-            {status && (
-                <div className={`p-4 mb-8 rounded-lg text-sm font-semibold border flex items-center gap-2 animate-fade-in ${status.type === 'success' ? 'bg-prime-green/10 text-prime-green border-prime-green/20' : 'bg-red-50 text-red-600 border-red-100'}`}>
-                    {status.text}
+        <PageWrapper title="Formula Configuration">
+            <div className="max-w-2xl mx-auto card-base p-10 bg-white mt-4">
+                <div className="mb-8 text-center">
+                    <h2 className="text-2xl font-bold text-prime-text tracking-tight mb-2">Commission Formula</h2>
+                    <p className="text-sm font-medium text-prime-muted">Adjust global payout variables.</p>
                 </div>
-            )}
 
-            <form onSubmit={handleSubmit} className="space-y-8">
-                <div>
-                    <label className="block text-xs font-bold text-prime-muted uppercase tracking-wider mb-2">
-                        Base Payout per Retained Call ($)
-                    </label>
-                    <div className="relative">
-                        <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-gray-400 font-bold">$</span>
+                {status && (
+                    <div className={`px-6 py-3 mb-8 rounded-full text-sm font-medium text-center ${status.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
+                        {status.text}
+                    </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-8">
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">
+                            Base Payout per Retained Call ($)
+                        </label>
                         <input 
                             type="number" 
                             step="0.01"
                             value={payoutPerCall} 
                             onChange={(e) => setPayoutPerCall(parseFloat(e.target.value))}
                             required
-                            className="input-base pl-10 font-mono text-xl text-prime-navy font-bold"
+                            className="input-base font-mono text-center text-xl font-bold text-prime-primary"
                         />
+                        <div className="mt-4 p-5 bg-gray-50 rounded-2xl border border-gray-100 text-center">
+                            <p className="text-[11px] font-bold text-prime-muted uppercase tracking-wider mb-1">Calculation Example</p>
+                            <p className="text-sm text-prime-text font-medium">100 retained calls × <span className="font-bold text-prime-primary">${payoutPerCall.toFixed(2)}</span> = <strong className="text-prime-text">${(100 * payoutPerCall).toFixed(2)}</strong> payout.</p>
+                        </div>
                     </div>
-                    <div className="mt-3 p-4 bg-prime-navy/5 rounded-lg border border-prime-navy/10">
-                        <p className="text-xs font-semibold text-prime-navy uppercase tracking-wider mb-1">Live Calculation Example</p>
-                        <p className="text-sm text-prime-text font-medium">100 retained calls × <span className="font-bold">${payoutPerCall.toFixed(2)}</span> = <strong className="text-prime-green">${(100 * payoutPerCall).toFixed(2)}</strong> payout.</p>
-                    </div>
-                </div>
 
-                <Button 
-                    type="submit" 
-                    disabled={isSubmitting}
-                    variant="primary"
-                    className="w-full py-3"
-                >
-                    {isSubmitting ? 'Authenticating & Saving...' : 'Save Global Formula'}
-                </Button>
-            </form>
-        </div>
+                    <Button 
+                        type="submit" 
+                        disabled={isSubmitting}
+                        variant="primary"
+                        className="w-full py-3"
+                    >
+                        {isSubmitting ? 'Saving...' : 'Save Global Formula'}
+                    </Button>
+                </form>
+            </div>
+        </PageWrapper>
     );
 };
 

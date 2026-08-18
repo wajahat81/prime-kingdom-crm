@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.db.session import supabase
 from app.core.permissions import get_current_active_user, require_role
+from app.schemas.attendance_schema import AttendanceStatusUpdate, AttendanceTimeUpdate
+from app.services.attendance_service import update_attendance_status, update_attendance_times
 import uuid
 from datetime import datetime, timezone
 
@@ -10,7 +12,6 @@ router = APIRouter()
 async def check_in(current_user: dict = Depends(get_current_active_user)):
     """Employee checks in (Strictly ONCE per day)."""
     try:
-        # Use explicit UTC timezone to prevent Docker local-time offsets
         today = datetime.now(timezone.utc).date().isoformat()
         
         check_response = supabase.table('attendance').select('*') \
@@ -21,7 +22,6 @@ async def check_in(current_user: dict = Depends(get_current_active_user)):
         if check_response.data:
             raise HTTPException(status_code=400, detail="You have already logged a shift for today.")
         
-        # Explicit UTC timestamp so the frontend converts to PKT accurately
         now = datetime.now(timezone.utc).isoformat()
         new_record = {
             "id": str(uuid.uuid4()),
@@ -113,4 +113,48 @@ async def get_attendance_history(
         return {"data": response.data if response.data else []}
     except Exception as e:
         print(f"Get history error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# NEW ENDPOINTS FOR ADMIN MANUAL ACTIONS
+# ==========================================
+
+@router.put("/{log_id}/status")
+async def update_status(
+    log_id: str,
+    payload: AttendanceStatusUpdate,
+    current_user: dict = Depends(require_role(["admin", "super_admin"]))
+):
+    """Admin manually approves or rejects an attendance record."""
+    try:
+        updated_record = update_attendance_status(log_id, payload.status)
+        if not updated_record:
+            raise HTTPException(status_code=404, detail="Attendance record not found.")
+        return {"message": f"Attendance status updated to {payload.status}", "data": updated_record}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Update status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{log_id}")
+async def update_times(
+    log_id: str,
+    payload: AttendanceTimeUpdate,
+    current_user: dict = Depends(require_role(["admin", "super_admin"]))
+):
+    """Admin manually edits the check-in or check-out times."""
+    try:
+        check_in_str = payload.check_in.isoformat() if payload.check_in else None
+        check_out_str = payload.check_out.isoformat() if payload.check_out else None
+        
+        updated_record = update_attendance_times(log_id, check_in_str, check_out_str)
+        if not updated_record:
+            raise HTTPException(status_code=404, detail="Attendance record not found or no data provided.")
+            
+        return {"message": "Attendance times updated successfully", "data": updated_record}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Update times error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

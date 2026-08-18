@@ -1,13 +1,14 @@
 import React from 'react';
+import ReactDOM from 'react-dom';
 import Button from './Button';
 
 const Modal = ({ isOpen, onClose, title, children, onConfirm, confirmText = "Confirm" }) => {
     if (!isOpen) return null;
 
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-prime-navy/60 backdrop-blur-sm animate-fade-in p-4">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100">
-                <div className="px-6 py-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+    return ReactDOM.createPortal(
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm animate-fade-in p-4">
+            <div className="bg-white rounded-3xl shadow-card w-full max-w-md overflow-hidden transform transition-all border border-prime-border">
+                <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-white">
                     <h3 className="text-lg font-bold text-prime-text tracking-tight">{title}</h3>
                     <button 
                         onClick={onClose} 
@@ -19,16 +20,17 @@ const Modal = ({ isOpen, onClose, title, children, onConfirm, confirmText = "Con
                     </button>
                 </div>
                 
-                <div className="px-6 py-6 text-prime-text">
+                <div className="px-8 py-6 text-prime-text">
                     {children}
                 </div>
                 
-                <div className="px-6 py-4 border-t border-gray-100 flex justify-end space-x-3 bg-gray-50/50">
-                    <Button variant="ghost" onClick={onClose}>Cancel</Button>
+                <div className="px-8 py-5 flex justify-end space-x-3 bg-gray-50/50">
+                    <Button variant="outline" onClick={onClose}>Cancel</Button>
                     {onConfirm && <Button variant="primary" onClick={onConfirm}>{confirmText}</Button>}
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body
     );
 };
 

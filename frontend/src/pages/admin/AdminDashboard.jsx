@@ -2,14 +2,11 @@ import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import AnnouncementBanner from '../../components/layout/AnnouncementBanner';
 import AnnouncementModal from '../../components/layout/AnnouncementModal';
+import PageWrapper from '../../components/layout/PageWrapper';
 
 const AdminDashboard = () => {
     const [stats, setStats] = useState({
-        totalCalls: 0,
-        retained: 0,
-        pending: 0,
-        notRetained: 0,
-        totalCommission: 0
+        totalCalls: 0, retained: 0, pending: 0, notRetained: 0, totalCommission: 0
     });
     const [loading, setLoading] = useState(true);
 
@@ -41,46 +38,46 @@ const AdminDashboard = () => {
     }, []);
 
     if (loading) return (
-        <div className="flex justify-center items-center h-screen w-full page-transition">
-            <div className="w-8 h-8 border-4 border-prime-navy/20 border-t-prime-navy rounded-full animate-spin"></div>
+        <div className="flex justify-center items-center h-[60vh] w-full">
+            <div className="w-8 h-8 border-4 border-prime-primary/20 border-t-prime-primary rounded-full animate-spin"></div>
         </div>
     );
 
     return (
-        <div className="flex flex-col min-h-screen bg-prime-bg page-transition">
+        <PageWrapper title="Admin Dashboard">
             <AnnouncementModal />
             <AnnouncementBanner />
             
-            <main className="flex-grow p-8 max-w-7xl mx-auto w-full">
-                <div className="mb-8">
-                    <h1 className="text-3xl font-extrabold text-prime-text tracking-tight mb-1">Administrator Dashboard</h1>
-                    <p className="text-prime-muted font-medium">System-wide overview of call logging and commission tracking.</p>
+            <div className="w-full pt-4">
+                <div className="mb-8 px-2">
+                    <h1 className="text-2xl font-bold text-prime-text tracking-tight mb-1">Administrator Dashboard</h1>
+                    <p className="text-sm text-prime-muted font-medium">System-wide overview of call logging and commission tracking.</p>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-                    <div className="card-base p-6 border-t-4 border-t-prime-navy">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Total Calls</h3>
-                        <p className="text-3xl font-bold text-prime-text mt-3">{stats.totalCalls}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-10 px-2">
+                    <div className="card-base p-6 bg-white">
+                        <h3 className="text-prime-muted text-xs font-semibold uppercase tracking-wider mb-2">Total Calls</h3>
+                        <p className="text-3xl font-bold text-prime-text">{stats.totalCalls}</p>
                     </div>
-                    <div className="card-base p-6 border-t-4 border-t-prime-green">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Retained</h3>
-                        <p className="text-3xl font-black text-prime-green mt-3">{stats.retained}</p>
+                    <div className="card-base p-6 border-t-4 border-t-emerald-500 bg-white">
+                        <h3 className="text-prime-muted text-xs font-semibold uppercase tracking-wider mb-2">Retained</h3>
+                        <p className="text-3xl font-bold text-emerald-600">{stats.retained}</p>
                     </div>
-                    <div className="card-base p-6 border-t-4 border-t-prime-gold">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Pending</h3>
-                        <p className="text-3xl font-bold text-prime-gold mt-3">{stats.pending}</p>
+                    <div className="card-base p-6 border-t-4 border-t-yellow-400 bg-white">
+                        <h3 className="text-prime-muted text-xs font-semibold uppercase tracking-wider mb-2">Pending</h3>
+                        <p className="text-3xl font-bold text-yellow-500">{stats.pending}</p>
                     </div>
-                    <div className="card-base p-6 border-t-4 border-t-red-500">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Not Retained</h3>
-                        <p className="text-3xl font-bold text-red-500 mt-3">{stats.notRetained}</p>
+                    <div className="card-base p-6 border-t-4 border-t-rose-500 bg-white">
+                        <h3 className="text-prime-muted text-xs font-semibold uppercase tracking-wider mb-2">Not Retained</h3>
+                        <p className="text-3xl font-bold text-rose-500">{stats.notRetained}</p>
                     </div>
-                    <div className="card-base p-6 bg-gradient-to-br from-prime-navy to-[#2a3f6b] text-white border-0 shadow-lg transform hover:-translate-y-1 transition-transform">
-                        <h3 className="text-prime-gold text-xs font-bold uppercase tracking-wider">Total Commission</h3>
-                        <p className="text-3xl font-black mt-3 tracking-tight">${stats.totalCommission.toFixed(2)}</p>
+                    <div className="card-base p-6 bg-gradient-to-r from-prime-primary to-prime-secondary text-white border-0">
+                        <h3 className="text-white/90 text-xs font-semibold uppercase tracking-wider mb-2">Total Commission</h3>
+                        <p className="text-3xl font-bold tracking-tight">${stats.totalCommission.toFixed(2)}</p>
                     </div>
                 </div>
-            </main>
-        </div>
+            </div>
+        </PageWrapper>
     );
 };
 

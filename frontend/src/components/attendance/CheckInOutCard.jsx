@@ -51,7 +51,6 @@ const CheckInOutCard = () => {
             
             if (data) {
                 setShiftStatus(data.status);
-                
                 if (data.status === 'checked_in' && data.check_in_time) {
                     setCheckInTime(data.check_in_time);
                     const diff = (new Date() - new Date(data.check_in_time)) / 1000;
@@ -62,7 +61,7 @@ const CheckInOutCard = () => {
             }
         } catch (error) {
             console.error('Failed to fetch attendance status:', error);
-            setError('Failed to load attendance status');
+            setError('Failed to load status');
         } finally {
             setLoading(false);
         }
@@ -83,8 +82,7 @@ const CheckInOutCard = () => {
                 setElapsedTime(0);
             }
         } catch (error) {
-            const errorMsg = error.response?.data?.detail || 'Failed to check in. Please try again.';
-            setError(errorMsg);
+            setError(error.response?.data?.detail || 'Failed to check in.');
         } finally {
             setIsProcessing(false); 
         }
@@ -119,59 +117,53 @@ const CheckInOutCard = () => {
     if (loading) {
         return (
             <div className="card-base p-8 text-center flex flex-col items-center justify-center min-h-[200px]">
-                <div className="w-8 h-8 border-4 border-prime-navy/20 border-t-prime-navy rounded-full animate-spin mb-4"></div>
-                <p className="text-sm font-medium text-prime-muted">Synchronizing shift data...</p>
+                <div className="w-8 h-8 border-4 border-prime-primary/20 border-t-prime-primary rounded-full animate-spin mb-4"></div>
             </div>
         );
     }
 
     return (
-        <div className="card-base p-8 min-w-[280px] relative overflow-hidden transition-all duration-300">
+        <div className="card-base p-8 min-w-[280px] relative overflow-hidden bg-white">
             {error && (
-                <div className="bg-red-50 border border-red-100 text-red-600 text-xs px-3 py-2 rounded-lg mb-4 text-center font-medium">
+                <div className="bg-red-50 text-red-600 text-xs px-3 py-2 rounded-full mb-4 text-center font-medium">
                     {error}
                 </div>
             )}
             
-            {/* STATE 1: Ready to start shift */}
             {shiftStatus === 'not_checked_in' && (
-                <div className="text-center page-transition">
-                    <div className="w-16 h-16 bg-prime-bg rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="w-8 h-8 text-prime-navy" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    </div>
+                <div className="text-center">
                     <h3 className="text-lg font-bold text-prime-text mb-1">Ready for your shift?</h3>
                     <p className="text-sm text-prime-muted mb-6">Log your attendance to begin tracking hours.</p>
                     <Button 
                         onClick={handleCheckIn}
                         disabled={isProcessing}
-                        variant="success"
+                        variant="primary"
                         className="w-full text-base py-3"
                     >
-                        {isProcessing ? 'Authenticating...' : 'Commence Shift'}
+                        {isProcessing ? 'Authenticating...' : 'Check-in'}
                     </Button>
                 </div>
             )}
 
-            {/* STATE 2: Actively working */}
             {shiftStatus === 'checked_in' && (
-                <div className="text-center page-transition">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-prime-green/10 text-prime-green rounded-full mb-6 border border-prime-green/20">
-                        <span className="w-2 h-2 rounded-full bg-prime-green animate-pulse"></span>
-                        <span className="text-xs font-bold uppercase tracking-wider">Active Shift</span>
+                <div className="text-center">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 bg-prime-primary/10 text-prime-primary rounded-full mb-6">
+                        <span className="w-2 h-2 rounded-full bg-prime-primary animate-pulse"></span>
+                        <span className="text-[10px] font-bold uppercase tracking-wider">Active Shift</span>
                     </div>
                     
-                    <p className="text-4xl font-mono font-bold text-prime-navy tracking-tight mb-6">
+                    <p className="text-4xl font-mono font-bold text-prime-text tracking-tight mb-6">
                         {formatTime(elapsedTime)}
                     </p>
 
-                    <div className="space-y-2 mb-4">
-                        <div className="flex justify-between text-xs font-medium text-prime-muted">
+                    <div className="space-y-2 mb-2">
+                        <div className="flex justify-between text-[11px] font-semibold text-prime-muted uppercase tracking-wider">
                             <span>Started: {new Date(checkInTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                             <span>{WORK_HOURS}h Target</span>
                         </div>
-                        <div className="relative w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="relative w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                             <div 
-                                className="absolute top-0 left-0 h-full bg-prime-green rounded-full transition-all duration-1000 ease-out"
+                                className="absolute top-0 left-0 h-full bg-prime-primary rounded-full transition-all duration-1000 ease-out"
                                 style={{ width: `${getProgressPercentage()}%` }}
                             />
                         </div>
@@ -179,18 +171,14 @@ const CheckInOutCard = () => {
                 </div>
             )}
 
-            {/* STATE 3: Shift completed for the day */}
             {shiftStatus === 'checked_out' && (
-                <div className="text-center page-transition">
-                    <div className="w-16 h-16 bg-prime-navy/5 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <svg className="w-8 h-8 text-prime-navy" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                <div className="text-center">
+                    <div className="w-12 h-12 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-6 h-6 text-prime-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
                     </div>
                     <h3 className="text-lg font-bold text-prime-text mb-1">Shift Completed</h3>
                     <p className="text-sm text-prime-muted mb-4">
                         You have successfully logged your {WORK_HOURS}-hour shift today.
-                    </p>
-                    <p className="text-2xl font-mono font-bold text-gray-300">
-                        {formatTime(WORK_HOURS * 3600)}
                     </p>
                 </div>
             )}

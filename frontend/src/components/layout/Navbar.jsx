@@ -1,54 +1,169 @@
-import React, { useContext } from 'react';
-import { AuthContext } from '../../context/AuthContext';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
+import apiClient from '../../services/apiClient';
+import Modal from '../common/Modal';
 
-const Navbar = () => {
-    const { user } = useContext(AuthContext);
+const Navbar = ({ toggleMobileMenu }) => {
+    const { user } = useAuth();
+    const [isVisible, setIsVisible] = useState(true);
+    const [lastScrollY, setLastScrollY] = useState(0);
+    const [shiftStatus, setShiftStatus] = useState('not_checked_in'); 
+    const [checkInTime, setCheckInTime] = useState(null);
+    const [elapsedTime, setElapsedTime] = useState(0);
+    const [isProcessing, setIsProcessing] = useState(false);
+    
+    const [confirmAction, setConfirmAction] = useState({ isOpen: false, type: null });
+    const [errorMsg, setErrorMsg] = useState(null);
 
-    // Format the role for display (e.g., "super_admin" -> "Super Admin")
-    const formatRole = (role) => {
-        if (!role) return '';
-        return role.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+    useEffect(() => {
+        const handleScroll = () => {
+            const currentScrollY = window.scrollY;
+            if (currentScrollY > lastScrollY && currentScrollY > 70) setIsVisible(false);
+            else setIsVisible(true);
+            setLastScrollY(currentScrollY);
+        };
+        window.addEventListener('scroll', handleScroll, { passive: true });
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, [lastScrollY]);
+
+    useEffect(() => {
+        if (!user) return;
+        const fetchAttendanceStatus = async () => {
+            try {
+                const response = await apiClient.get('/api/v1/attendance/status');
+                if (response.data) {
+                    setShiftStatus(response.data.status);
+                    if (response.data.status === 'checked_in' && response.data.check_in_time) {
+                        setCheckInTime(response.data.check_in_time);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to fetch attendance status', error);
+            }
+        };
+        fetchAttendanceStatus();
+    }, [user]);
+
+    useEffect(() => {
+        let interval;
+        if (shiftStatus === 'checked_in' && checkInTime) {
+            interval = setInterval(() => {
+                const diff = (new Date() - new Date(checkInTime)) / 1000;
+                setElapsedTime(diff);
+            }, 1000);
+        }
+        return () => clearInterval(interval);
+    }, [shiftStatus, checkInTime]);
+
+    const executeCheckIn = async () => {
+        setIsProcessing(true);
+        setErrorMsg(null);
+        try {
+            const response = await apiClient.post('/api/v1/attendance/check-in');
+            if (response.data?.status === 'checked_in') {
+                setShiftStatus('checked_in');
+                setCheckInTime(response.data.check_in_time || new Date().toISOString());
+                setElapsedTime(0);
+                setConfirmAction({ isOpen: false, type: null });
+            }
+        } catch (error) {
+            setErrorMsg('Failed to communicate with timesheet servers.');
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
+    const executeCheckOut = async () => {
+        setIsProcessing(true);
+        setErrorMsg(null);
+        try {
+            await apiClient.post('/api/v1/attendance/check-out');
+            setShiftStatus('checked_out');
+            setCheckInTime(null);
+            setConfirmAction({ isOpen: false, type: null });
+        } catch (error) {
+            setErrorMsg('Failed to end shift properly.');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const formatTime = (seconds) => {
+        const hrs = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${String(hrs).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    };
+
+    if (!user) return null;
+
     return (
-        <header className="bg-white h-16 border-b border-gray-100 flex items-center justify-between px-8 sticky top-0 z-30 shadow-sm transition-all">
+        <header className={`bg-white h-[72px] border-b border-prime-border flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 transition-transform duration-300 ease-in-out ${isVisible ? 'translate-y-0' : '-translate-y-full'}`}>
             
-            {/* Left Side: Search Bar Placeholder */}
-            <div className="flex-1 flex items-center">
-                <div className="relative w-96 hidden md:block group">
-                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-prime-navy transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                    <input 
-                        type="text" 
-                        placeholder="Search records, employees..." 
-                        className="w-full pl-10 pr-4 py-2 bg-gray-50 border-transparent rounded-lg text-sm focus:bg-white focus:border-prime-navy/20 focus:ring-2 focus:ring-prime-navy/10 transition-all outline-none text-prime-text placeholder-gray-400"
-                    />
+            <Modal 
+                isOpen={confirmAction.isOpen} 
+                onClose={() => { setConfirmAction({ isOpen: false, type: null }); setErrorMsg(null); }} 
+                title={confirmAction.type === 'in' ? "Start Shift" : "End Shift"}
+                onConfirm={confirmAction.type === 'in' ? executeCheckIn : executeCheckOut}
+                confirmText={isProcessing ? "Processing..." : "Proceed"}
+            >
+                <div className="space-y-4">
+                    <p className="text-sm text-prime-muted">Are you sure you want to {confirmAction.type === 'in' ? 'start' : 'end'} your shift?</p>
+                    {errorMsg && (
+                        <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-xs font-semibold text-center">
+                            {errorMsg}
+                        </div>
+                    )}
                 </div>
-            </div>
-            
-            {/* Right Side: Notifications & User Profile */}
-            <div className="flex items-center space-x-6">
-                
-                {/* Notification Bell */}
-                <button className="text-gray-400 hover:text-prime-navy transition-colors relative">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </Modal>
+
+            <div className="flex items-center gap-4">
+                {/* Drawer Button now ALWAYS visible on all screen sizes */}
+                <button 
+                    onClick={toggleMobileMenu} 
+                    className="text-prime-muted hover:text-prime-primary transition-colors focus:outline-none p-1"
+                    title="Toggle Sidebar"
+                >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
-                    {/* Unread indicator */}
-                    <span className="absolute top-0 right-0 w-2 h-2 bg-prime-gold rounded-full border-2 border-white"></span>
                 </button>
 
-                {/* Profile Badge */}
-                <div className="flex items-center gap-3 pl-6 border-l border-gray-100 cursor-pointer group">
-                    <div className="flex flex-col items-end hidden sm:flex">
-                        <span className="text-sm font-semibold text-prime-text">System User</span>
-                        <span className="text-[10px] font-bold text-prime-navy bg-prime-navy/5 px-2 py-0.5 rounded-full mt-0.5 uppercase tracking-wider">
-                            {formatRole(user?.role)}
-                        </span>
+                <Link to="/dashboard" className="flex items-center gap-3 group">
+                    {/* Expanded horizontal container size for the logo */}
+                    <div className="w-36 h-10 flex items-center justify-start">
+                        <img src="/prime-kingdom-logo.png" alt="Prime Kingdom" className="w-full h-full object-contain object-left" />
                     </div>
-                    <div className="w-9 h-9 rounded-full bg-prime-navy text-white flex items-center justify-center font-bold text-sm ring-2 ring-transparent group-hover:ring-prime-navy/20 transition-all shadow-sm">
-                        {user?.full_name ? user.full_name.charAt(0).toUpperCase() : (user?.role ? user.role.charAt(0).toUpperCase() : 'U')}
+                </Link>
+            </div>
+            
+            <div className="flex items-center space-x-4 md:space-x-8">
+                <div className="hidden sm:flex items-center">
+                    {shiftStatus === 'not_checked_in' && (
+                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'in' })} disabled={isProcessing} className="px-4 py-1.5 bg-prime-primary text-white hover:bg-prime-secondary rounded-full text-xs font-bold transition-colors">
+                            Commence Shift
+                        </button>
+                    )}
+                    {shiftStatus === 'checked_in' && (
+                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'out' })} disabled={isProcessing} className="flex items-center gap-2 px-4 py-1.5 bg-prime-primary/10 text-prime-primary hover:bg-red-50 hover:text-red-600 rounded-full text-xs font-bold uppercase tracking-wider transition-colors group">
+                            <span className="w-2 h-2 rounded-full bg-prime-primary animate-pulse group-hover:hidden"></span>
+                            <span className="group-hover:hidden">{formatTime(elapsedTime)}</span>
+                            <span className="hidden group-hover:block">End Shift</span>
+                        </button>
+                    )}
+                    {shiftStatus === 'checked_out' && (
+                        <span className="px-4 py-1.5 bg-gray-100 text-gray-500 rounded-full text-xs font-bold uppercase tracking-wider">Shift Complete</span>
+                    )}
+                </div>
+
+                <div className="flex items-center gap-3 border-l border-gray-200 pl-4 md:pl-8">
+                    <div className="w-9 h-9 rounded-full border border-prime-border bg-gray-50 text-prime-primary flex items-center justify-center font-bold text-sm">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                    </div>
+                    <div className="flex flex-col text-left hidden md:flex">
+                        <span className="text-sm font-semibold text-prime-text">{user?.full_name || 'System User'}</span>
+                        <span className="text-[11px] font-medium text-prime-muted capitalize">{user?.role?.replace('_', ' ')}</span>
                     </div>
                 </div>
             </div>

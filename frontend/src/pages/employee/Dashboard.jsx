@@ -1,164 +1,216 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import AnnouncementBanner from '../../components/layout/AnnouncementBanner';
-import CheckInOutCard from '../../components/attendance/CheckInOutCard';
 import AnnouncementModal from '../../components/layout/AnnouncementModal';
+import PageWrapper from '../../components/layout/PageWrapper';
+import { useAuth } from '../../context/AuthContext';
 
 const Dashboard = () => {
-    const [metrics, setMetrics] = useState({
-        total: 0, retained: 0, pending: 0, not_retained: 0
-    });
-    const [weeklyMetrics, setWeeklyMetrics] = useState({
-        total: 0, retained: 0, pending: 0, not_retained: 0
-    });
-    const [commission, setCommission] = useState(0);
+    const { user } = useAuth();
+    const isAdminOrSuper = user?.role === 'admin' || user?.role === 'super_admin';
+
+    const [staffList, setStaffList] = useState([]);
+    const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
+    
+    const [metrics, setMetrics] = useState({ total: 0, retained: 0, pending: 0, not_retained: 0 });
+    const [weeklyMetrics, setWeeklyMetrics] = useState({ total: 0, retained: 0, pending: 0, not_retained: 0 });
+    const [commission, setCommission] = useState({ total: 0, weekly: 0 });
+    
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
     const getWeekRange = () => {
         const now = new Date();
         const day = now.getDay();
-        const diff = day === 0 ? 6 : day - 1;
-        const monday = new Date(now);
-        monday.setDate(now.getDate() - diff);
-        monday.setHours(0, 0, 0, 0);
+        const diff = day === 0 ? 0 : day; 
+        const sunday = new Date(now);
+        sunday.setDate(now.getDate() - diff);
+        sunday.setHours(0, 0, 0, 0);
         
-        const saturday = new Date(monday);
-        saturday.setDate(monday.getDate() + 5);
-        saturday.setHours(23, 59, 59, 999);
+        const nextSaturday = new Date(sunday);
+        nextSaturday.setDate(sunday.getDate() + 6);
+        nextSaturday.setHours(23, 59, 59, 999);
         
-        return { monday, saturday };
+        return { startOfWeek: sunday, endOfWeek: nextSaturday };
     };
 
+    // Fetch staff list if user is admin
+    useEffect(() => {
+        if (isAdminOrSuper) {
+            const fetchStaff = async () => {
+                try {
+                    const res = await apiClient.get('/api/v1/users/');
+                    setStaffList(res.data.data || res.data || []);
+                } catch (err) {
+                    console.error('Failed to fetch staff list:', err);
+                }
+            };
+            fetchStaff();
+        }
+    }, [isAdminOrSuper]);
+
+    // Fetch call data based on viewing mode (self or selected employee)
     useEffect(() => {
         const fetchData = async () => {
+            setLoading(true);
             try {
-                const response = await apiClient.get('/api/v1/calls/me');
-                const calls = response.data.data || [];
+                let endpoint = '/api/v1/calls/me';
+                if (isAdminOrSuper && selectedEmployeeId) {
+                    // Admins view all calls; we filter on the frontend by the selected ID
+                    endpoint = '/api/v1/calls/';
+                }
+
+                const response = await apiClient.get(endpoint);
+                let calls = response.data.data || [];
+
+                if (isAdminOrSuper && selectedEmployeeId) {
+                    calls = calls.filter(c => c.employee_id === selectedEmployeeId);
+                }
+
+                const { startOfWeek, endOfWeek } = getWeekRange();
+
+                let totalComm = 0;
+                let weeklyComm = 0;
 
                 const calculatedMetrics = calls.reduce((acc, call) => {
                     acc.total += 1;
                     if (call.status === 'retained') {
                         acc.retained += 1;
-                        acc.totalCommission = (acc.totalCommission || 0) + (call.commission || 0);
+                        totalComm += (call.commission || 0);
                     }
                     if (call.status === 'pending') acc.pending += 1;
                     if (call.status === 'not_retained') acc.not_retained += 1;
                     return acc;
-                }, { total: 0, retained: 0, pending: 0, not_retained: 0, totalCommission: 0 });
-                
-                setMetrics({
-                    total: calculatedMetrics.total,
-                    retained: calculatedMetrics.retained,
-                    pending: calculatedMetrics.pending,
-                    not_retained: calculatedMetrics.not_retained
-                });
-                
-                setCommission(calculatedMetrics.totalCommission || 0);
+                }, { total: 0, retained: 0, pending: 0, not_retained: 0 });
 
-                const { monday, saturday } = getWeekRange();
                 const weekCalls = calls.filter(call => {
                     const callDate = new Date(call.created_at);
-                    return callDate >= monday && callDate <= saturday;
+                    return callDate >= startOfWeek && callDate <= endOfWeek;
                 });
 
                 const weekMetrics = weekCalls.reduce((acc, call) => {
                     acc.total += 1;
-                    if (call.status === 'retained') acc.retained += 1;
+                    if (call.status === 'retained') {
+                        acc.retained += 1;
+                        weeklyComm += (call.commission || 0);
+                    }
                     if (call.status === 'pending') acc.pending += 1;
                     if (call.status === 'not_retained') acc.not_retained += 1;
                     return acc;
                 }, { total: 0, retained: 0, pending: 0, not_retained: 0 });
-                setWeeklyMetrics(weekMetrics);
 
+                setMetrics(calculatedMetrics);
+                setWeeklyMetrics(weekMetrics);
+                setCommission({ total: totalComm, weekly: weeklyComm });
+                setError(null);
             } catch (err) {
-                console.error('Error fetching data:', err);
-                setError('Failed to load performance metrics.');
+                setError('Failed to load metrics.');
             } finally {
                 setLoading(false);
             }
         };
 
         fetchData();
-    }, []);
+    }, [selectedEmployeeId, isAdminOrSuper]);
 
-    if (loading) return (
-        <div className="flex h-screen items-center justify-center bg-prime-bg text-prime-navy">
-            <div className="w-10 h-10 border-4 border-prime-navy/20 border-t-prime-navy rounded-full animate-spin"></div>
+    if (loading && !staffList.length && isAdminOrSuper) return (
+        <div className="flex justify-center items-center h-[60vh] w-full">
+            <div className="w-8 h-8 border-4 border-prime-primary/20 border-t-prime-primary rounded-full animate-spin"></div>
         </div>
     );
 
     return (
-        <div className="flex flex-col min-h-screen bg-prime-bg page-transition">
+        <PageWrapper title="Dashboard">
             <AnnouncementModal />
             <AnnouncementBanner />
             
-            <main className="flex-grow p-8 max-w-7xl mx-auto w-full">
-                {error && <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-lg">{error}</div>}
+            <div className="w-full pt-4">
+                {error && <div className="mb-8 bg-red-50 text-red-600 px-6 py-3 rounded-full text-sm font-medium text-center">{error}</div>}
 
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-10">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 px-2 gap-4">
                     <div>
-                        <h1 className="text-3xl font-extrabold text-prime-text tracking-tight mb-2">My Performance</h1>
-                        <p className="text-prime-muted font-medium">Review your historical call data and current shift status.</p>
+                        <h1 className="text-2xl font-bold text-prime-text tracking-tight mb-1">
+                            {isAdminOrSuper && selectedEmployeeId ? 'Viewing Staff Dashboard' : 'My Performance'}
+                        </h1>
                     </div>
-                    <div className="w-full md:w-auto">
-                        <CheckInOutCard />
+
+                    {/* Admin / SuperAdmin Employee Selector Dropdown */}
+                    {isAdminOrSuper && (
+                        <div className="w-full md:w-72">
+                            <select 
+                                value={selectedEmployeeId} 
+                                onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                                className="input-base cursor-pointer bg-white font-semibold text-sm"
+                            >
+                                <option value="">-- View My Dashboard --</option>
+                                {staffList.map(emp => (
+                                    <option key={emp.id} value={emp.id}>
+                                        {emp.full_name || emp.email} ({emp.role})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
+                    <div className="bg-prime-primary rounded-2xl p-8 text-white border-0 shadow-sm relative overflow-hidden">
+                        <div className="relative z-10">
+                            <h3 className="text-white/90 text-xs font-bold uppercase tracking-widest mb-2">Total Commission Earned</h3>
+                            <p className="text-5xl font-bold tracking-tight">Rs. {commission.total.toFixed(2)}</p>
+                        </div>
+                        <div className="absolute right-0 top-0 w-64 h-full bg-white/10 transform skew-x-12 translate-x-10"></div>
+                    </div>
+                    <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm relative overflow-hidden">
+                        <div className="relative z-10">
+                            <h3 className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-2">Earned This Week</h3>
+                            <p className="text-5xl font-bold tracking-tight text-prime-primary">Rs. {commission.weekly.toFixed(2)}</p>
+                        </div>
+                        <div className="absolute right-0 top-0 w-32 h-full bg-prime-primary/5 transform -skew-x-12 translate-x-4"></div>
                     </div>
                 </div>
 
-                {/* Commission Summary Hero Card */}
-                <div className="bg-gradient-to-r from-prime-primary to-prime-secondary rounded-2xl p-8 mb-10 text-white relative overflow-hidden shadow-lg shadow-blue-500/20 transform transition-transform hover:-translate-y-1 duration-300">
-                    <div className="relative z-10">
-                        <h3 className="text-white/90 text-sm font-bold uppercase tracking-widest mb-1">Total Financial Impact</h3>
-                        <p className="text-5xl font-black mt-2 tracking-tight drop-shadow-md">${commission.toFixed(2)}</p>
+                <h2 className="text-lg font-semibold text-gray-800 mb-4 px-2">All-Time Records</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 px-2">
+                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Total Handled</h3>
+                        <p className="text-4xl font-bold text-gray-700">{metrics.total}</p>
                     </div>
-                    {/* Light Decorative Element */}
-                    <div className="absolute right-0 top-0 w-64 h-full bg-white/10 transform skew-x-12 translate-x-10 backdrop-blur-sm"></div>
-                </div>
-
-                {/* Scorecard Grid - All Time */}
-                <h2 className="text-xl font-bold text-prime-text mb-4">All-Time Global Stats</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
-                    <div className="card-base p-6 border-t-4 border-t-prime-navy">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Total Handled</h3>
-                        <p className="text-3xl font-bold text-prime-text mt-3">{metrics.total}</p>
+                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
+                        <p className="text-4xl font-bold text-emerald-500">{metrics.retained}</p>
                     </div>
-                    <div className="card-base p-6 border-t-4 border-t-prime-green">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Retained</h3>
-                        <p className="text-3xl font-black text-prime-green mt-3">{metrics.retained}</p>
+                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Pending Review</h3>
+                        <p className="text-4xl font-bold text-yellow-500">{metrics.pending}</p>
                     </div>
-                    <div className="card-base p-6 border-t-4 border-t-prime-gold">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Pending Review</h3>
-                        <p className="text-3xl font-bold text-prime-gold mt-3">{metrics.pending}</p>
-                    </div>
-                    <div className="card-base p-6 border-t-4 border-t-red-500">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Not Retained</h3>
-                        <p className="text-3xl font-bold text-red-500 mt-3">{metrics.not_retained}</p>
+                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Not Retained</h3>
+                        <p className="text-4xl font-bold text-rose-500">{metrics.not_retained}</p>
                     </div>
                 </div>
 
-                {/* Scorecard Grid - This Week */}
-                <h2 className="text-xl font-bold text-prime-text mb-4">Current Week (Mon - Sat)</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Total Calls</h3>
-                        <p className="text-2xl font-bold text-prime-text mt-2">{weeklyMetrics.total}</p>
+                <h2 className="text-lg font-semibold text-gray-800 mb-4 px-2">This Week Records</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10 px-2">
+                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Total Handled</h3>
+                        <p className="text-4xl font-bold text-gray-700">{weeklyMetrics.total}</p>
                     </div>
-                    <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Retained</h3>
-                        <p className="text-2xl font-bold text-prime-text mt-2">{weeklyMetrics.retained}</p>
+                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
+                        <p className="text-4xl font-bold text-emerald-500">{weeklyMetrics.retained}</p>
                     </div>
-                    <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Pending</h3>
-                        <p className="text-2xl font-bold text-prime-text mt-2">{weeklyMetrics.pending}</p>
+                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Pending Review</h3>
+                        <p className="text-4xl font-bold text-yellow-500">{weeklyMetrics.pending}</p>
                     </div>
-                    <div className="bg-white rounded-xl p-6 border border-gray-100 shadow-sm">
-                        <h3 className="text-prime-muted text-xs font-bold uppercase tracking-wider">Not Retained</h3>
-                        <p className="text-2xl font-bold text-prime-text mt-2">{weeklyMetrics.not_retained}</p>
+                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Not Retained</h3>
+                        <p className="text-4xl font-bold text-rose-500">{weeklyMetrics.not_retained}</p>
                     </div>
                 </div>
-            </main>
-        </div>
+            </div>
+        </PageWrapper>
     );
 };
 

@@ -1,209 +1,247 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import Button from '../../components/common/Button';
-import { CALL_STATUS } from '../../utils/constants';
+import Modal from '../../components/common/Modal';
+import PageWrapper from '../../components/layout/PageWrapper';
 
-const CallRow = ({ call, fetchCalls }) => {
-    const [commission, setCommission] = useState(call.commission ?? '');
-    const [isSaving, setIsSaving] = useState(false);
-    const [status, setStatus] = useState(call.status);
-    const [updatingStatus, setUpdatingStatus] = useState(false);
+const CallManagement = () => {
+    const [calls, setCalls] = useState([]);
+    const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [statusFilter, setStatusFilter] = useState('all');
+    
+    // Edit/Add Modal States
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalMode, setModalMode] = useState('add'); 
+    const [currentCallId, setCurrentCallId] = useState(null);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const isRetained = status === CALL_STATUS.RETAINED;
+    // Delete Modal State
+    const [confirmDeleteDialog, setConfirmDeleteDialog] = useState({ isOpen: false, callId: null });
 
-    const handleStatusChange = async (newStatus) => {
-        setUpdatingStatus(true);
+    const [formData, setFormData] = useState({
+        client_name: '', employee_id: '', call_duration: '', status: 'pending', commission: ''
+    });
+
+    const fetchCallsAndUsers = async () => {
+        setLoading(true);
         try {
-            await apiClient.put(`/api/v1/calls/${call.id}/status`, { status: newStatus });
-            setStatus(newStatus);
+            const [callsRes, usersRes] = await Promise.all([
+                apiClient.get('/api/v1/calls/'),
+                apiClient.get('/api/v1/users/')
+            ]);
+            setCalls(callsRes.data.data || []);
+            
+            const staff = (usersRes.data.data || usersRes.data || []).filter(u => u.role === 'employee' || u.role === 'admin');
+            setUsers(staff);
+            setError(null);
         } catch (err) {
-            console.error(err);
-            alert('Failed to update status');
+            setError('Failed to load data.');
         } finally {
-            setUpdatingStatus(false);
+            setLoading(false);
         }
     };
 
-    const saveCommission = async () => {
-        const value = parseFloat(commission);
-        if (isNaN(value) || value < 0) {
-            alert('Please enter a valid commission amount');
-            return;
-        }
+    useEffect(() => { fetchCallsAndUsers(); }, []);
 
-        setIsSaving(true);
+    const filteredCalls = calls.filter(call => {
+        if (statusFilter === 'all') return true;
+        return call.status === statusFilter;
+    });
+
+    const handleOpenAdd = () => {
+        setModalMode('add');
+        setFormData({ client_name: '', employee_id: '', call_duration: '', status: 'pending', commission: '' });
+        setIsModalOpen(true);
+    };
+
+    const handleOpenEdit = (call) => {
+        setModalMode('edit');
+        setCurrentCallId(call.id);
+        setFormData({
+            client_name: call.client_name,
+            employee_id: call.employee_id || '',
+            call_duration: call.call_duration || '',
+            status: call.status,
+            commission: call.commission || ''
+        });
+        setIsModalOpen(true);
+    };
+
+    const handleChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
+
+    const handleSubmit = async () => {
+        setIsSubmitting(true);
         try {
-            await apiClient.put(`/api/v1/calls/${call.id}/commission`, { commission: value });
+            const payload = {
+                ...formData,
+                commission: formData.status === 'retained' ? (parseFloat(formData.commission) || 0) : 0
+            };
+
+            if (modalMode === 'add') {
+                await apiClient.post('/api/v1/calls/', payload);
+            } else {
+                await apiClient.put(`/api/v1/calls/${currentCallId}`, payload);
+            }
+            setIsModalOpen(false);
+            fetchCallsAndUsers();
         } catch (err) {
-            console.error('Error updating commission:', err);
-            alert('Failed to update commission');
+            setError('Failed to save call log.');
         } finally {
-            setIsSaving(false);
+            setIsSubmitting(false);
         }
     };
 
-    const getBadgeStyle = (currentStatus) => {
-        switch(currentStatus) {
-            case 'retained': return 'bg-prime-green/10 text-prime-green border-prime-green/20';
-            case 'pending': return 'bg-prime-gold/10 text-prime-gold border-prime-gold/20';
-            case 'not_retained': return 'bg-red-50 text-red-600 border-red-100';
-            default: return 'bg-gray-100 text-gray-600 border-gray-200';
+    const executeDelete = async () => {
+        try {
+            await apiClient.delete(`/api/v1/calls/${confirmDeleteDialog.callId}`);
+            fetchCallsAndUsers();
+        } catch (err) {
+            setError('Failed to delete call log.');
+        } finally {
+            setConfirmDeleteDialog({ isOpen: false, callId: null });
         }
     };
 
-    const getEmployeeName = () => {
+    const getEmployeeName = (call) => {
         if (call.profiles && call.profiles.full_name) return call.profiles.full_name;
         if (call.employee_name) return call.employee_name;
         return call.employee_id ? call.employee_id.substring(0, 8) + '...' : 'Unknown';
     };
 
     return (
-        <tr className="hover:bg-gray-50/50 transition-colors border-b border-gray-100 last:border-0 group">
-            <td className="px-6 py-4 whitespace-nowrap">
-                <span className="font-semibold text-prime-text">{call.client_name}</span>
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap text-prime-muted text-sm font-medium">
-                {getEmployeeName()}
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap">
-                <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-bold border ${getBadgeStyle(status)}`}>
-                    <span className="w-1.5 h-1.5 rounded-full bg-current mr-1.5"></span>
-                    {status.replace('_', ' ').toUpperCase()}
-                </span>
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-prime-muted">
-                {call.call_duration || '-'}
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap">
-                <div className="flex items-center gap-3 opacity-100 sm:opacity-60 group-hover:opacity-100 transition-opacity">
-                    <input
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        value={commission}
-                        onChange={(e) => setCommission(e.target.value)}
-                        disabled={!isRetained || isSaving}
-                        className={`w-28 px-3 py-1.5 border rounded-lg text-sm font-medium transition-all ${
-                            isRetained 
-                                ? 'bg-white border-gray-200 text-prime-text focus:ring-2 focus:ring-prime-navy/20 focus:border-prime-navy outline-none' 
-                                : 'bg-gray-50 border-gray-100 text-gray-400 cursor-not-allowed'
-                        }`}
-                        placeholder={isRetained ? '$ 0.00' : 'N/A'}
-                    />
-                    {isRetained && (
-                        <button
-                            onClick={saveCommission}
-                            disabled={isSaving || commission === '' || commission == call.commission}
-                            className="px-3 py-1.5 bg-prime-navy text-white text-xs font-semibold rounded-lg hover:bg-opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
-                        >
-                            {isSaving ? '...' : 'Save'}
-                        </button>
+        <PageWrapper title="Call Logs">
+            {/* Delete Confirmation Modal */}
+            <Modal 
+                isOpen={confirmDeleteDialog.isOpen} 
+                onClose={() => setConfirmDeleteDialog({ isOpen: false, callId: null })} 
+                title="Delete Call Log"
+                onConfirm={executeDelete}
+                confirmText="Delete"
+            >
+                <p className="text-sm font-medium text-prime-muted">Are you sure you want to permanently delete this call log?</p>
+            </Modal>
+
+            {/* Add / Edit Form Modal */}
+            <Modal 
+                isOpen={isModalOpen} 
+                onClose={() => setIsModalOpen(false)} 
+                title={modalMode === 'add' ? "Add Call Log" : "Edit Call Log"}
+                onConfirm={handleSubmit}
+                confirmText={isSubmitting ? "Saving..." : "Save"}
+            >
+                <div className="space-y-4 py-2">
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Agent</label>
+                        <select name="employee_id" value={formData.employee_id} onChange={handleChange} required className="input-base">
+                            <option value="">Select Agent...</option>
+                            {users.map(u => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Client Name</label>
+                        <input type="text" name="client_name" value={formData.client_name} onChange={handleChange} required className="input-base" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Duration</label>
+                        <input type="text" name="call_duration" value={formData.call_duration} onChange={handleChange} placeholder="MM:SS" className="input-base" />
+                    </div>
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Status</label>
+                        <select name="status" value={formData.status} onChange={handleChange} className="input-base">
+                            <option value="pending">Pending</option>
+                            <option value="retained">Retained</option>
+                            <option value="not_retained">Not Retained</option>
+                        </select>
+                    </div>
+                    {formData.status === 'retained' && (
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Commission ($)</label>
+                            <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} className="input-base" />
+                        </div>
                     )}
                 </div>
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap text-sm text-prime-muted">
-                {new Date(call.created_at).toLocaleDateString()}
-            </td>
-            <td className="px-6 py-4 whitespace-nowrap">
-                <select
-                    value={status}
-                    onChange={(e) => handleStatusChange(e.target.value)}
-                    disabled={updatingStatus}
-                    className="text-sm bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-prime-text focus:outline-none focus:border-prime-navy focus:ring-2 focus:ring-prime-navy/20 cursor-pointer transition-all"
-                >
-                    <option value={CALL_STATUS.PENDING}>Pending Review</option>
-                    <option value={CALL_STATUS.RETAINED}>Retained</option>
-                    <option value={CALL_STATUS.NOT_RETAINED}>Not Retained</option>
-                </select>
-            </td>
-        </tr>
-    );
-};
+            </Modal>
 
-const CallManagement = () => {
-    const [calls, setCalls] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-
-    const fetchCalls = async () => {
-        setLoading(true);
-        try {
-            const response = await apiClient.get('/api/v1/calls/');
-            setCalls(response.data.data || []);
-            setError(null);
-        } catch (err) {
-            console.error('Error fetching calls:', err);
-            setError('Failed to load call logs. Please try again.');
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchCalls();
-    }, []);
-
-    return (
-        <div className="p-8 max-w-7xl mx-auto w-full page-transition">
-            <div className="flex justify-between items-end mb-8">
-                <div>
-                    <h1 className="text-2xl font-bold text-prime-text mb-1 tracking-tight">Call Operations</h1>
-                    <p className="text-sm text-prime-muted">Review logs, update statuses, and process financial commissions.</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    <span className="px-4 py-2 bg-white border border-gray-200 text-prime-muted text-sm font-medium rounded-lg shadow-sm">
-                        Total Records: <strong className="text-prime-text">{calls.length}</strong>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 px-2 gap-4">
+                <div className="flex items-center gap-4">
+                    <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Call Logs</h1>
+                    <span className="text-[13px] text-gray-500 font-semibold bg-white px-4 py-1.5 rounded-full border border-gray-200 shadow-sm">
+                        {filteredCalls.length} Records
                     </span>
-                    <Button onClick={fetchCalls} variant="primary" className="gap-2 shadow-sm">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                        Sync Records
+                </div>
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                    <select 
+                        value={statusFilter} 
+                        onChange={(e) => setStatusFilter(e.target.value)}
+                        className="bg-white border border-gray-200 text-sm font-semibold text-gray-600 rounded-full px-4 py-2 cursor-pointer shadow-sm outline-none focus:border-prime-primary"
+                    >
+                        <option value="all">All Statuses</option>
+                        <option value="retained">Retained</option>
+                        <option value="pending">Pending</option>
+                        <option value="not_retained">Not Retained</option>
+                    </select>
+                    <Button onClick={handleOpenAdd} variant="primary" className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap">
+                        + Add Log
                     </Button>
                 </div>
             </div>
 
             {error && (
-                <div className="bg-red-50 border border-red-100 text-red-700 p-4 rounded-xl mb-6 text-sm font-medium flex items-center gap-2 animate-fade-in">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    {error}
-                </div>
+                <div className="bg-red-50 text-red-600 px-6 py-3 rounded-full mb-6 text-sm font-medium text-center">{error}</div>
             )}
 
-            <div className="card-base overflow-hidden">
-                <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-100">
-                        <thead className="bg-gray-50/80">
-                            <tr>
-                                {['Client', 'Agent', 'Status', 'Duration', 'Commission', 'Date Logged', 'Workflow'].map((head) => (
-                                    <th key={head} className="px-6 py-4 text-left text-xs font-bold text-prime-muted uppercase tracking-wider">
-                                        {head}
-                                    </th>
-                                ))}
+            <div className="card-base flex flex-col min-h-[500px] w-full">
+                <div className="overflow-x-auto w-full flex-grow">
+                    <table className="min-w-full">
+                        <thead>
+                            <tr className="border-b border-gray-100">
+                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Client</th>
+                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Agent</th>
+                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Duration</th>
+                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Status</th>
+                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Commission</th>
+                                <th className="px-4 md:px-6 py-6 text-right text-[13px] font-bold text-gray-400">Actions</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-gray-100">
+                        <tbody className="bg-white">
                             {loading ? (
-                                <tr>
-                                    <td colSpan="7" className="px-6 py-16 text-center">
-                                        <div className="inline-flex items-center gap-3 text-prime-muted font-medium">
-                                            <div className="w-5 h-5 border-2 border-prime-navy/20 border-t-prime-navy rounded-full animate-spin"></div>
-                                            Retrieving operational data...
-                                        </div>
-                                    </td>
-                                </tr>
-                            ) : calls.length === 0 ? (
-                                <tr>
-                                    <td colSpan="7" className="px-6 py-16 text-center text-prime-muted text-sm font-medium">
-                                        No call records found matching your criteria.
-                                    </td>
-                                </tr>
+                                <tr><td colSpan="6" className="px-6 py-20 text-center text-gray-400 text-sm">Loading records...</td></tr>
+                            ) : filteredCalls.length === 0 ? (
+                                <tr><td colSpan="6" className="px-6 py-32 text-center text-gray-400 text-sm font-medium">No records yet.</td></tr>
                             ) : (
-                                calls.map((call) => <CallRow key={call.id} call={call} fetchCalls={fetchCalls} />)
+                                filteredCalls.map((call) => (
+                                    <tr key={call.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{call.call_duration || '-'}</td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap">
+                                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${call.status === 'retained' ? 'bg-green-50 text-green-600' : call.status === 'not_retained' ? 'bg-red-50 text-red-600' : 'bg-yellow-50 text-yellow-600'}`}>
+                                                {call.status.replace('_', ' ')}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-700 text-sm">
+                                            {call.status === 'retained' ? `$${parseFloat(call.commission || 0).toFixed(2)}` : '-'}
+                                        </td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-right">
+                                            <div className="flex justify-end gap-2 items-center">
+                                                <button onClick={() => handleOpenEdit(call)} className="text-gray-400 hover:text-prime-primary p-2">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                </button>
+                                                <button onClick={() => setConfirmDeleteDialog({ isOpen: true, callId: call.id })} className="text-gray-400 hover:text-red-500 p-2">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
                             )}
                         </tbody>
                     </table>
                 </div>
             </div>
-        </div>
+        </PageWrapper>
     );
 };
 

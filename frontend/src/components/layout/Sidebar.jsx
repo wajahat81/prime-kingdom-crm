@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext';
 import { ROLES } from '../../utils/constants';
 
 const Sidebar = ({ closeMobileMenu }) => {
-    // Removed logout and modal state since it's handled in Navbar now
     const { user } = useAuth();
 
     if (!user) return null;
@@ -27,15 +26,20 @@ const Sidebar = ({ closeMobileMenu }) => {
     };
 
     return (
-        /* Added self-start and enforced h-screen to lock sidebar position */
-        <div className="w-[260px] bg-white border-r border-prime-border flex flex-col h-dvh lg:h-screen sticky top-0 self-start z-30 flex-shrink-0">
+        /* Removed 'sticky', 'top-*', and 'h-screen'. Using 'h-full' to perfectly fill the App.jsx container */
+        <div className="w-[260px] bg-white border-r border-prime-border flex flex-col h-full z-20 flex-shrink-0">
+            
+            {/* Mobile Header (Hidden on Desktop) */}
             <div className="lg:hidden flex items-center justify-between p-4 border-b border-prime-border flex-shrink-0">
                 <span className="font-bold text-prime-primary tracking-wide">MENU</span>
                 <button onClick={closeMobileMenu} className="text-prime-muted hover:text-red-500">
-                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                 </button>
             </div>
 
+            {/* Navigation Links */}
             <nav className="flex-1 px-4 py-6 overflow-y-auto space-y-1">
                 {getNavItems().map((item) => (
                     <NavLink

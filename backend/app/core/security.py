@@ -3,9 +3,16 @@ from jose import jwt
 import bcrypt
 import os
 
+# Add these FastAPI imports
+from fastapi import Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer
+
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-for-local-dev")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12
+
+# Tell FastAPI where the frontend goes to get the token
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
@@ -40,3 +47,25 @@ def decode_access_token(token: str) -> dict:
         raise Exception("Token has expired")
     except jwt.JWTError:
         raise Exception("Invalid token")
+
+# --- ADD THIS NEW FUNCTION TO THE BOTTOM ---
+
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    """Extracts the JWT token from the request header and returns the user data."""
+    try:
+        payload = decode_access_token(token)
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, 
+                detail="Could not validate credentials"
+            )
+        # Return a dictionary containing the user's ID so the auth router can use it
+        return {"id": user_id, "role": payload.get("role")}
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e),
+            headers={"WWW-Authenticate": "Bearer"},
+        )

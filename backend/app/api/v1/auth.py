@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.security import OAuth2PasswordRequestForm
-from app.core.security import verify_password, create_access_token, get_password_hash
+from app.core.security import verify_password, create_access_token, get_password_hash, get_current_user
 from app.db.session import supabase
 from app.schemas.auth_schema import Token, UserCreate
 from app.limiter import limiter
 import logging
 import uuid
+from app.schemas.auth_schema import Token, UserCreate, ChangePasswordRequest
 from app.core.permissions import require_role
+
 
 logger = logging.getLogger(__name__)
 
@@ -101,3 +103,51 @@ async def register_user(
     except Exception as e:
         logger.error(f"Registration error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/change-password")
+@limiter.limit("5/minute")
+async def change_password(
+    request: Request,
+    password_data: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Allow a logged-in user to securely change their password."""
+    try:
+        user_id = str(current_user['id'])
+        logger.info(f"Password change attempt for user ID: {user_id}")
+        
+        # 1. Fetch current password hash from Supabase
+        response = supabase.table('profiles').select('password_hash').eq('id', user_id).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        user_record = response.data[0]
+        
+        # 2. Verify the old password is correct
+        if not verify_password(password_data.current_password, user_record['password_hash']):
+            logger.warning(f"Invalid current password provided by user ID: {user_id}")
+            raise HTTPException(status_code=400, detail="Incorrect current password")
+            
+        # 3. Hash the new password
+        new_hashed_password = get_password_hash(password_data.new_password)
+        
+        # 4. Update the database
+        update_response = supabase.table('profiles').update(
+            {"password_hash": new_hashed_password}
+        ).eq('id', user_id).execute()
+        
+        if not update_response.data:
+            raise HTTPException(status_code=500, detail="Failed to update password in database")
+            
+        logger.info(f"Password successfully changed for user ID: {user_id}")
+        
+        return {
+            "message": "Password updated successfully"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Change password error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

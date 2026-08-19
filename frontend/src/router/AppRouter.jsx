@@ -15,6 +15,7 @@ import Attendance from '../pages/employee/Attendance';
 import Announcements from '../pages/employee/Announcements';
 import AdminDashboard from '../pages/admin/AdminDashboard';
 import ForgotPassword from '../pages/auth/ForgotPassword';
+import ChangePassword from '../pages/auth/ChangePassword';
 
 const AppRouter = () => {
     return (
@@ -46,6 +47,15 @@ const AppRouter = () => {
                 <Route path="/admin/announcements" element={<PageWrapper title="System Broadcasts"><AnnouncementManagement /></PageWrapper>} />
             </Route>
             
+            <Route 
+    path="/change-password" 
+    element={
+        <ProtectedRoute>
+            <ChangePassword />
+        </ProtectedRoute>
+    } 
+/>
+
             {/* SUPER CUSTOM 404 PAGE */}
             <Route path="*" element={
                 <PageWrapper title="Page Not Found">

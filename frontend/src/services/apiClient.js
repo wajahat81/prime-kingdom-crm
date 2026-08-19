@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Public VITE keys are safe; private API keys stay on the backend
 const apiClient = axios.create({
-    baseURL: 'http://192.168.18.76:8000', 
+    baseURL: import.meta.env.VITE_API_URL,
     headers: {
         'Content-Type': 'application/json'
     }

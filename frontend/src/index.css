@@ -6,24 +6,17 @@
 
 html {
     font-size: 12.8px !important;
+    height: 100%;
+    overflow: hidden !important; /* Kills the outer scrollbar permanently */
 }
-
 
 body, #root {
     background-color: #f9fafb;
     margin: 0;
     padding: 0;
+    height: 100%;
+    overflow: hidden !important; /* Kills the outer scrollbar permanently */
 }
-
-/* Override Tailwind's screen-height classes so your Sidebar and Login pages reach the bottom */
-.h-screen {
-    height: 125vh !important;
-}
-
-.min-h-screen {
-    min-height: 125vh !important;
-}
-
 
 @layer utilities {
   .page-transition {

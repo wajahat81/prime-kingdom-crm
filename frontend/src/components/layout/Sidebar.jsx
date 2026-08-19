@@ -17,9 +17,13 @@ const Sidebar = ({ closeMobileMenu }) => {
         if (user?.role === ROLES.ADMIN || user?.role === ROLES.SUPER_ADMIN) {
             items.push({ path: '/admin/calls/manage', label: 'Call Logs' });
             items.push({ path: '/admin/attendance', label: 'Attendance' });
-            items.push({ path: '/admin/announcements', label: 'Announcements' }); 
             items.push({ path: '/admin/users', label: 'Manage Users' }); 
         }
+        
+        if (user?.role === ROLES.SUPER_ADMIN) {
+            items.push({ path: '/admin/announcements', label: 'Announcements' }); 
+        }
+        
         return items;
     };
 
@@ -41,8 +45,9 @@ const Sidebar = ({ closeMobileMenu }) => {
                 <p className="text-sm font-medium text-prime-muted">Are you sure you want to log out of your secure workspace?</p>
             </Modal>
 
-            <div className="w-[260px] bg-white border-r border-prime-border flex flex-col h-screen z-20 flex-shrink-0">
-                <div className="lg:hidden flex items-center justify-between p-4 border-b border-prime-border">
+            {/* Changed h-screen to h-dvh lg:h-screen to prevent mobile address bar clipping */}
+            <div className="w-[260px] bg-white border-r border-prime-border flex flex-col h-dvh lg:h-screen sticky top-0 z-30 flex-shrink-0">
+                <div className="lg:hidden flex items-center justify-between p-4 border-b border-prime-border flex-shrink-0">
                     <span className="font-bold text-prime-primary tracking-wide">MENU</span>
                     <button onClick={closeMobileMenu} className="text-prime-muted hover:text-red-500">
                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -68,7 +73,7 @@ const Sidebar = ({ closeMobileMenu }) => {
                     ))}
                 </nav>
 
-                <div className="p-4 border-t border-prime-border">
+                <div className="p-4 border-t border-prime-border flex-shrink-0 bg-white">
                     <button
                         onClick={() => setIsLogoutModalOpen(true)}
                         type="button"

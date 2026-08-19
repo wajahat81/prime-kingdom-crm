@@ -99,7 +99,7 @@ const Navbar = ({ toggleMobileMenu }) => {
     if (!user) return null;
 
     return (
-        <header className={`bg-white h-[72px] border-b border-prime-border flex items-center justify-between px-4 md:px-8 sticky top-0 z-30 transition-transform duration-300 ease-in-out ${isVisible ? 'translate-y-0' : '-translate-y-full'}`}>
+        <header className={`bg-white min-h-[72px] py-3 border-b border-prime-border flex flex-wrap md:flex-nowrap items-center justify-between px-4 md:px-8 sticky top-0 z-30 transition-transform duration-300 ease-in-out ${isVisible ? 'translate-y-0' : '-translate-y-full'}`}>
             
             <Modal 
                 isOpen={confirmAction.isOpen} 
@@ -118,8 +118,8 @@ const Navbar = ({ toggleMobileMenu }) => {
                 </div>
             </Modal>
 
-            <div className="flex items-center gap-4">
-                {/* Drawer Button now ALWAYS visible on all screen sizes */}
+            {/* Left Section: Menu Toggle & Logo */}
+            <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
                 <button 
                     onClick={toggleMobileMenu} 
                     className="text-prime-muted hover:text-prime-primary transition-colors focus:outline-none p-1"
@@ -130,40 +130,45 @@ const Navbar = ({ toggleMobileMenu }) => {
                     </svg>
                 </button>
 
-                <Link to="/dashboard" className="flex items-center gap-3 group">
-                    {/* Expanded horizontal container size for the logo */}
-                    <div className="w-36 h-10 flex items-center justify-start">
+                <Link to="/dashboard" className="flex items-center group">
+                    <div className="w-32 sm:w-52 h-8 sm:h-10 flex items-center justify-start">
                         <img src="/prime-kingdom-logo.png" alt="Prime Kingdom" className="w-full h-full object-contain object-left" />
+                        
                     </div>
                 </Link>
             </div>
             
-            <div className="flex items-center space-x-4 md:space-x-8">
-                <div className="hidden sm:flex items-center">
+            {/* Right Section: Shift Buttons & User Profile (Now completely visible on mobile) */}
+            <div className="flex items-center justify-end gap-3 md:space-x-8 mt-2 md:mt-0 flex-grow md:flex-grow-0">
+                
+                {/* Shift Controls */}
+                <div className="flex items-center">
                     {shiftStatus === 'not_checked_in' && (
-                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'in' })} disabled={isProcessing} className="px-4 py-1.5 bg-prime-primary text-white hover:bg-prime-secondary rounded-full text-xs font-bold transition-colors">
+                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'in' })} disabled={isProcessing} className="px-3 py-1.5 md:px-4 bg-prime-primary text-white hover:bg-prime-secondary rounded-full text-[10px] md:text-xs font-bold transition-colors whitespace-nowrap">
                             Commence Shift
                         </button>
                     )}
                     {shiftStatus === 'checked_in' && (
-                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'out' })} disabled={isProcessing} className="flex items-center gap-2 px-4 py-1.5 bg-prime-primary/10 text-prime-primary hover:bg-red-50 hover:text-red-600 rounded-full text-xs font-bold uppercase tracking-wider transition-colors group">
-                            <span className="w-2 h-2 rounded-full bg-prime-primary animate-pulse group-hover:hidden"></span>
+                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'out' })} disabled={isProcessing} className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 bg-prime-primary/10 text-prime-primary hover:bg-red-50 hover:text-red-600 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors group whitespace-nowrap">
+                            <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-prime-primary animate-pulse group-hover:hidden"></span>
                             <span className="group-hover:hidden">{formatTime(elapsedTime)}</span>
                             <span className="hidden group-hover:block">End Shift</span>
                         </button>
                     )}
                     {shiftStatus === 'checked_out' && (
-                        <span className="px-4 py-1.5 bg-gray-100 text-gray-500 rounded-full text-xs font-bold uppercase tracking-wider">Shift Complete</span>
+                        <span className="px-3 md:px-4 py-1.5 bg-gray-100 text-gray-500 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider whitespace-nowrap">Shift Complete</span>
                     )}
                 </div>
 
-                <div className="flex items-center gap-3 border-l border-gray-200 pl-4 md:pl-8">
-                    <div className="w-9 h-9 rounded-full border border-prime-border bg-gray-50 text-prime-primary flex items-center justify-center font-bold text-sm">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                {/* User Profile */}
+                <div className="flex items-center gap-2 md:gap-3 border-l border-gray-200 pl-3 md:pl-8">
+                    <div className="w-7 h-7 md:w-9 md:h-9 rounded-full border border-prime-border bg-gray-50 text-prime-primary flex items-center justify-center font-bold text-xs md:text-sm flex-shrink-0">
+                        <svg className="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
                     </div>
-                    <div className="flex flex-col text-left hidden md:flex">
-                        <span className="text-sm font-semibold text-prime-text">{user?.full_name || 'System User'}</span>
-                        <span className="text-[11px] font-medium text-prime-muted capitalize">{user?.role?.replace('_', ' ')}</span>
+                    {/* User Details - Removed 'hidden md:flex' so it shows on mobile */}
+                    <div className="flex flex-col text-left">
+                        <span className="text-[11px] md:text-sm font-semibold text-prime-text leading-tight truncate max-w-[80px] md:max-w-none">{user?.full_name || 'System User'}</span>
+                        <span className="text-[9px] md:text-[11px] font-medium text-prime-muted capitalize leading-tight">{user?.role?.replace('_', ' ')}</span>
                     </div>
                 </div>
             </div>

@@ -12,7 +12,7 @@ app.add_exception_handler(429, _rate_limit_exceeded_handler)
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000","http://192.168.18.76:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

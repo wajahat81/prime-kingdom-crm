@@ -33,7 +33,7 @@ const CallManagement = () => {
             ]);
             setCalls(callsRes.data.data || []);
             
-            const staff = (usersRes.data.data || usersRes.data || []).filter(u => u.role === 'employee' || u.role === 'admin');
+            const staff = (usersRes.data.data || usersRes.data || []).filter(u => u.role === 'employee');
             setUsers(staff);
             setError(null);
         } catch (err) {
@@ -152,12 +152,12 @@ const CallManagement = () => {
                         <select name="status" value={formData.status} onChange={handleChange} className="input-base">
                             <option value="pending">Pending</option>
                             <option value="retained">Retained</option>
-                            <option value="not_retained">Not Retained</option>
+                            
                         </select>
                     </div>
                     {formData.status === 'retained' && (
                         <div>
-                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Commission ($)</label>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Commission (Rs. )</label>
                             <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} className="input-base" />
                         </div>
                     )}
@@ -180,7 +180,7 @@ const CallManagement = () => {
                         <option value="all">All Statuses</option>
                         <option value="retained">Retained</option>
                         <option value="pending">Pending</option>
-                        <option value="not_retained">Not Retained</option>
+                        
                     </select>
                     <Button onClick={handleOpenAdd} variant="primary" className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap">
                         + Add Log
@@ -222,7 +222,7 @@ const CallManagement = () => {
                                             </span>
                                         </td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-700 text-sm">
-                                            {call.status === 'retained' ? `$${parseFloat(call.commission || 0).toFixed(2)}` : '-'}
+                                            {call.status === 'retained' ? `Rs. ${parseFloat(call.commission || 0).toFixed(2)}` : '-'}
                                         </td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap text-right">
                                             <div className="flex justify-end gap-2 items-center">

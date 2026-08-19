@@ -4,6 +4,27 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+    font-size: 12.8px !important;
+}
+
+
+body, #root {
+    background-color: #f9fafb;
+    margin: 0;
+    padding: 0;
+}
+
+/* Override Tailwind's screen-height classes so your Sidebar and Login pages reach the bottom */
+.h-screen {
+    height: 125vh !important;
+}
+
+.min-h-screen {
+    min-height: 125vh !important;
+}
+
+
 @layer utilities {
   .page-transition {
     @apply animate-fade-in w-full max-w-full;

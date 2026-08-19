@@ -20,7 +20,7 @@ async def get_users(
 ):
     """Get all users, optionally filtered by role."""
     try:
-        query = supabase.table('profiles').select('id, email, full_name, role, created_at')
+        query = supabase.table('profiles').select('id, email, full_name, role, dialing_id, created_at')
         if role:
             query = query.eq('role', role)
         response = query.execute()

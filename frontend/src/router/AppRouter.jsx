@@ -37,9 +37,13 @@ const AppRouter = () => {
                 <Route path="/admin/calls/upload" element={<PageWrapper title="Log Call"><CallLogUpload /></PageWrapper>} />
                 <Route path="/admin/calls/manage" element={<PageWrapper title="Call Logs"><CallManagement /></PageWrapper>} />
                 <Route path="/admin/attendance" element={<PageWrapper title="Attendance Auditing"><AttendanceLogs /></PageWrapper>} />
-                <Route path="/admin/announcements" element={<PageWrapper title="System Broadcasts"><AnnouncementManagement /></PageWrapper>} />
                 <Route path="/admin/commissions" element={<PageWrapper title="Commissions"><CommissionManagement /></PageWrapper>} />
                 <Route path="/admin/users" element={<PageWrapper title="Manage Users"><UserManagement /></PageWrapper>} />
+            </Route>
+            
+            {/* STRICT: Super Admin ONLY Routes */}
+            <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
+                <Route path="/admin/announcements" element={<PageWrapper title="System Broadcasts"><AnnouncementManagement /></PageWrapper>} />
             </Route>
             
             {/* SUPER CUSTOM 404 PAGE */}

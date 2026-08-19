@@ -22,10 +22,13 @@ const CallLogUpload = () => {
     useEffect(() => {
         const fetchStaff = async () => {
             try {
-                // Fetch both employees and admins to log calls for
+                // Fetch strictly employees (agents) to log calls for
                 const response = await apiClient.get('/api/v1/users/');
                 const data = response.data.data || response.data || [];
-                const staff = data.filter(u => u.role === 'employee' || u.role === 'admin');
+                
+                // ONLY allow 'employee' role
+                const staff = data.filter(u => u.role === 'employee');
+                
                 setEmployees(staff);
                 setLoadingEmployees(false);
             } catch (error) {
@@ -128,7 +131,6 @@ const CallLogUpload = () => {
                             <select name="status" value={formData.status} onChange={handleChange} className="input-base cursor-pointer">
                                 <option value="pending">Pending</option>
                                 <option value="retained">Retained</option>
-                                <option value="not_retained">Not Retained</option>
                             </select>
                         </div>
 

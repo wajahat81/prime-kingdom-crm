@@ -91,16 +91,11 @@ export const AuthProvider = ({ children }) => {
     };
 
     const logout = async () => {
-        try {
-            await logoutService();
-        } catch (error) {
-            console.error('Logout error:', error);
-        } finally {
+       
             setToken(null);
             setUser(null);
             localStorage.removeItem('access_token');
             localStorage.removeItem('user');
-        }
     };
 
     const value = {

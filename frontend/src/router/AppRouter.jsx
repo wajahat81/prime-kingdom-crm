@@ -25,11 +25,14 @@ const AppRouter = () => {
             <Route path="/login" element={<PageWrapper title="Sign In"><Login /></PageWrapper>} />
             <Route path="/forgot-password" element={<PageWrapper title="Recover Account"><ForgotPassword /></PageWrapper>} />
 
-            {/* Dashboard - accessible by all authenticated users */}
+            {/* Dashboard & User Settings - accessible by all authenticated users */}
             <Route element={<ProtectedRoute allowedRoles={['employee', 'admin', 'super_admin']} />}>
                 <Route path="/dashboard" element={<PageWrapper title="Dashboard"><EmployeeDashboard /></PageWrapper>} />
                 <Route path="/attendance" element={<PageWrapper title="My Attendance"><Attendance /></PageWrapper>} />
                 <Route path="/announcements" element={<PageWrapper title="Bulletins"><Announcements /></PageWrapper>} />
+                
+                {/* MOVED CHANGE PASSWORD HERE */}
+                <Route path="/change-password" element={<PageWrapper title="Change Password"><ChangePassword /></PageWrapper>} />
             </Route>
 
             {/* Admin & Super Admin Routes */}
@@ -46,15 +49,6 @@ const AppRouter = () => {
             <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
                 <Route path="/admin/announcements" element={<PageWrapper title="System Broadcasts"><AnnouncementManagement /></PageWrapper>} />
             </Route>
-            
-            <Route 
-    path="/change-password" 
-    element={
-        <ProtectedRoute>
-            <ChangePassword />
-        </ProtectedRoute>
-    } 
-/>
 
             {/* SUPER CUSTOM 404 PAGE */}
             <Route path="*" element={

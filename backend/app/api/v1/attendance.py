@@ -4,7 +4,7 @@ from app.core.permissions import get_current_active_user, require_role
 from app.schemas.attendance_schema import AttendanceStatusUpdate, AttendanceTimeUpdate
 from app.services.attendance_service import update_attendance_status, update_attendance_times
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
 
@@ -64,9 +64,17 @@ async def check_out(current_user: dict = Depends(get_current_active_user)):
             raise HTTPException(status_code=400, detail="No active check-in found to check out from.")
         
         record = response.data[0]
+        check_in_time = datetime.fromisoformat(record['check_in'].replace('Z', '+00:00'))
+        current_time = datetime.now(timezone.utc)
+        
+        # 9-HOUR HARD CAP FOR MANUAL CHECKOUTS
+        if current_time - check_in_time >= timedelta(hours=9):
+            actual_check_out = (check_in_time + timedelta(hours=9)).isoformat()
+        else:
+            actual_check_out = current_time.isoformat()
         
         update_response = supabase.table('attendance').update({
-            'check_out': datetime.now(timezone.utc).isoformat(),
+            'check_out': actual_check_out,
             'status': 'checked_out'
         }).eq('id', record['id']).execute()
         
@@ -79,7 +87,7 @@ async def check_out(current_user: dict = Depends(get_current_active_user)):
 
 @router.get("/status")
 async def get_attendance_status(current_user: dict = Depends(get_current_active_user)):
-    """Get today's exact shift status."""
+    """Get today's exact shift status with auto-checkout enforcement."""
     try:
         today = datetime.now(timezone.utc).date().isoformat()
         
@@ -92,6 +100,28 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
         
         if response.data:
             record = response.data[0]
+            
+            # --- 9-HOUR AUTO-CHECKOUT LOGIC ---
+            if record.get('status') == 'checked_in' and record.get('check_in'):
+                check_in_time = datetime.fromisoformat(record['check_in'].replace('Z', '+00:00'))
+                current_time = datetime.now(timezone.utc)
+                
+                if current_time - check_in_time >= timedelta(hours=9):
+                    auto_check_out_time = (check_in_time + timedelta(hours=9)).isoformat()
+                    
+                    # Force close the shift in the database
+                    supabase.table('attendance').update({
+                        'check_out': auto_check_out_time,
+                        'status': 'checked_out'
+                    }).eq('id', record['id']).execute()
+                    
+                    return {
+                        "status": "checked_out",
+                        "check_in_time": record['check_in'],
+                        "check_out_time": auto_check_out_time
+                    }
+            # -----------------------------------
+
             return {
                 "status": record.get('status', 'checked_out'),
                 "check_in_time": record.get('check_in'),

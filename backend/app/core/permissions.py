@@ -1,25 +1,36 @@
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Depends, HTTPException, status, Request
 from app.core.security import decode_access_token
 from app.db.session import supabase
 
-security = HTTPBearer()
+# We removed HTTPBearer() because we use enterprise HttpOnly cookies now!
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get current user from JWT token."""
-    token = credentials.credentials
+async def get_current_user(request: Request):
+    """Get current user from JWT token stored in secure cookie."""
+    
+    # 1. Read the exact token from the request cookies
+    token = request.cookies.get("access_token")
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Not authenticated. Missing secure cookie."
+        )
+        
     try:
+        # 2. Decode it
         payload = decode_access_token(token)
         user_id = payload.get("sub")
+        
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
         
-        # Get user profile
+        # 3. Get user profile from Supabase
         response = supabase.table('profiles').select('*').eq('id', user_id).execute()
         if not response.data:
             raise HTTPException(status_code=401, detail="User not found")
         
         return response.data[0]
+        
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid authentication")
 

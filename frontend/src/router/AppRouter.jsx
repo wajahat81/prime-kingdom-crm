@@ -16,6 +16,9 @@ import Announcements from '../pages/employee/Announcements';
 import AdminDashboard from '../pages/admin/AdminDashboard';
 import ForgotPassword from '../pages/auth/ForgotPassword';
 import ChangePassword from '../pages/auth/ChangePassword';
+import LeaveRequest from '../pages/employee/LeaveRequest';
+import LeaveManagement from '../pages/admin/LeaveManagement';
+
 
 const AppRouter = () => {
     return (
@@ -30,8 +33,8 @@ const AppRouter = () => {
                 <Route path="/dashboard" element={<PageWrapper title="Dashboard"><EmployeeDashboard /></PageWrapper>} />
                 <Route path="/attendance" element={<PageWrapper title="My Attendance"><Attendance /></PageWrapper>} />
                 <Route path="/announcements" element={<PageWrapper title="Bulletins"><Announcements /></PageWrapper>} />
-                
-                {/* MOVED CHANGE PASSWORD HERE */}
+                <Route path="/leaves" element={<PageWrapper title="Leave Requests"><LeaveRequest /></PageWrapper>} />
+
                 <Route path="/change-password" element={<PageWrapper title="Change Password"><ChangePassword /></PageWrapper>} />
             </Route>
 
@@ -43,6 +46,7 @@ const AppRouter = () => {
                 <Route path="/admin/attendance" element={<PageWrapper title="Attendance Auditing"><AttendanceLogs /></PageWrapper>} />
                 <Route path="/admin/commissions" element={<PageWrapper title="Commissions"><CommissionManagement /></PageWrapper>} />
                 <Route path="/admin/users" element={<PageWrapper title="Manage Users"><UserManagement /></PageWrapper>} />
+                <Route path="/admin/leaves" element={<PageWrapper title="Manage Leaves"><LeaveManagement /></PageWrapper>} />
             </Route>
             
             {/* STRICT: Super Admin ONLY Routes */}

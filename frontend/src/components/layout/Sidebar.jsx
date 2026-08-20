@@ -11,10 +11,11 @@ const Sidebar = ({ closeMobileMenu }) => {
     const getNavItems = () => {
         const items = [];
         items.push({ path: '/dashboard', label: 'Dashboard' });
-        
+        items.push({ path: '/leaves', label: 'Leave Requests' });
         if (user?.role === ROLES.ADMIN || user?.role === ROLES.SUPER_ADMIN) {
             items.push({ path: '/admin/calls/manage', label: 'Call Logs' });
             items.push({ path: '/admin/attendance', label: 'Attendance' });
+            items.push({ path: '/admin/leaves', label: 'Manage Leave Requests' });
             items.push({ path: '/admin/users', label: 'Manage Users' }); 
         }
         

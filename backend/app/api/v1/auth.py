@@ -1,52 +1,72 @@
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from app.core.security import verify_password, create_access_token, get_password_hash, get_current_user
 from app.db.session import supabase
-from app.schemas.auth_schema import Token, UserCreate
+from app.schemas.auth_schema import Token, UserCreate, ChangePasswordRequest
 from app.limiter import limiter
+from app.core.permissions import require_role
 import logging
 import uuid
-from app.schemas.auth_schema import Token, UserCreate, ChangePasswordRequest
-from app.core.permissions import require_role
-
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
-@router.post("/login", response_model=Token)
+@router.post("/login")
 @limiter.limit("5/minute")
-async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(response: Response, request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     try:
         identifier = form_data.username.strip()
         logger.info(f"Login attempt for identifier: {identifier}")
         
-        # DUAL LOGIN LOGIC: Check if it's a 4-digit dialing ID or an email
+        # FIXED: Added 'device_token' to both select queries!
         if identifier.isdigit() and len(identifier) == 4:
-            response = supabase.table('profiles').select('id, role, password_hash, email, full_name, dialing_id').eq('dialing_id', identifier).execute()
+            db_response = supabase.table('profiles').select('id, role, password_hash, email, full_name, dialing_id, device_token').eq('dialing_id', identifier).execute()
         else:
-            response = supabase.table('profiles').select('id, role, password_hash, email, full_name, dialing_id').eq('email', identifier).execute()
+            db_response = supabase.table('profiles').select('id, role, password_hash, email, full_name, dialing_id, device_token').eq('email', identifier).execute()
         
-        if not response.data:
-            logger.warning(f"User not found: {identifier}")
+        if not db_response.data:
             raise HTTPException(status_code=400, detail="Incorrect credentials")
             
-        user_data = response.data[0]
-        logger.info(f"User found: {user_data.get('email')}, role: {user_data.get('role')}")
+        user_data = db_response.data[0]
         
         if not verify_password(form_data.password, user_data['password_hash']):
-            logger.warning(f"Invalid password for user: {identifier}")
             raise HTTPException(status_code=400, detail="Incorrect credentials")
+        
+        # --- NEW DEVICE LOCKDOWN LOGIC ---
+        if user_data['role'] not in ['admin', 'super_admin']:
+            saved_token = user_data.get('device_token')
+            client_token = request.headers.get("x-device-token")
+            
+            if not saved_token:
+                raise HTTPException(status_code=403, detail="Device not assigned. Please ask an Admin to approve this computer.")
+                
+            if client_token != saved_token:
+                raise HTTPException(status_code=403, detail="Unrecognized device. You can only log in from your specific assigned office computer.")
+        # ---------------------------------
         
         access_token = create_access_token(
             data={"sub": str(user_data['id']), "role": user_data['role']}
         )
         
+        # --- SMART COOKIE LOGIC ---
+        is_production = "primekingdom.org" in str(request.url)
+        
+        response.set_cookie(
+            key="access_token",
+            value=access_token, 
+            httponly=True,
+            secure=True,
+            samesite="none",
+            domain=".primekingdom.org" if is_production else None,
+            path="/",
+            max_age=60 * 60 * 12
+        )
+        # ------------------------
+        
         logger.info(f"Login successful for user: {identifier}")
         
         return {
-            "access_token": access_token,
-            "token_type": "bearer",
+            "message": "Login successful",
             "user": {
                 "id": user_data['id'],
                 "email": user_data.get('email'),

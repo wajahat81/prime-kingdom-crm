@@ -1,26 +1,24 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { login as loginService, logout as logoutService } from '../services/authService';
+import { login as loginService } from '../services/authService';
 import { ROLES } from '../utils/constants';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(null);
+    const [token, setToken] = useState(null); // Kept as a dummy value so it doesn't break other components
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        const storedToken = localStorage.getItem('access_token');
+        // We no longer check for a stored token, only the stored user object!
         const storedUser = localStorage.getItem('user');
-        if (storedToken && storedUser) {
+        if (storedUser) {
             try {
                 const parsedUser = JSON.parse(storedUser);
-                setToken(storedToken);
+                setToken('cookie-managed'); 
                 setUser(parsedUser);
-                console.log('Restored user from storage:', parsedUser);
             } catch (error) {
                 console.error('Error parsing stored user:', error);
-                localStorage.removeItem('access_token');
                 localStorage.removeItem('user');
             }
         }
@@ -30,33 +28,16 @@ export const AuthProvider = ({ children }) => {
     const login = async (email, password) => {
         try {
             const response = await loginService(email, password);
-            console.log('Login response:', response);
             
-            if (response.access_token) {
-                // Use the user data from the backend response
-                // The backend should return user data with the token
-                let userData;
+            // SECURITY UPDATE: We now check for response.user instead of response.access_token
+            if (response.user) {
+                const userData = response.user;
                 
-                if (response.user) {
-                    // If backend returns user object
-                    userData = response.user;
-                } else {
-                    // If backend only returns token, we need to fetch user data
-                    // For now, try to get role from the token or response
-                    userData = {
-                        id: response.id || 'unknown',
-                        email: email,
-                        role: response.role || ROLES.EMPLOYEE,
-                        full_name: response.full_name || response.name || email.split('@')[0]
-                    };
-                }
-                
-                console.log('Setting user data:', userData);
-                
-                setToken(response.access_token);
+                setToken('cookie-managed');
                 setUser(userData);
-                localStorage.setItem('access_token', response.access_token);
                 localStorage.setItem('user', JSON.stringify(userData));
+                
+                // Note: We no longer set 'access_token' in localStorage because the browser handles the cookie!
                 
                 return { success: true, data: response };
             }
@@ -90,12 +71,10 @@ export const AuthProvider = ({ children }) => {
         }
     };
 
-    const logout = async () => {
-       
-            setToken(null);
-            setUser(null);
-            localStorage.removeItem('access_token');
-            localStorage.removeItem('user');
+    const logout = () => {
+        setToken(null);
+        setUser(null);
+        localStorage.removeItem('user');
     };
 
     const value = {

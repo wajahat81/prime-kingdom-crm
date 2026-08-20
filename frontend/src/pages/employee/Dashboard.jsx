@@ -83,6 +83,9 @@ const Dashboard = () => {
     const [needsToStartShift, setNeedsToStartShift] = useState(false);
     const [isStartingShift, setIsStartingShift] = useState(false);
 
+    const [allTimeFilter, setAllTimeFilter] = useState('all');
+
+
     useEffect(() => {
         const checkShiftStatus = async () => {
             if (!user) return; 
@@ -171,8 +174,17 @@ const Dashboard = () => {
 
         let totalComm = 0, weeklyComm = 0, dailyComm = 0;
 
-        // All-Time
-        const calcAll = targetCalls.reduce((acc, call) => {
+
+       // All-Time (with Month Filter)
+        let filteredAllCalls = targetCalls;
+        if (allTimeFilter !== 'all') {
+            const monthsToSubtract = parseInt(allTimeFilter);
+            const cutoffDate = new Date();
+            cutoffDate.setMonth(cutoffDate.getMonth() - monthsToSubtract);
+            filteredAllCalls = targetCalls.filter(c => new Date(c.created_at) >= cutoffDate);
+        }
+
+        const calcAll = filteredAllCalls.reduce((acc, call) => {
             if (call.status === 'retained') {
                 acc.retained += 1;
                 totalComm += (call.commission || 0);
@@ -410,7 +422,22 @@ const Dashboard = () => {
                     </div>
                 </div>
 
-                <h2 className="text-lg font-semibold text-gray-800 mb-4 px-2">All-Time Stats</h2>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 mb-4 gap-4">
+                    <h2 className="text-lg font-semibold text-gray-800">All-Time Stats</h2>
+                    <select 
+                        value={allTimeFilter}
+                        onChange={(e) => setAllTimeFilter(e.target.value)}
+                        className="input-base text-sm py-2 px-4 shadow-sm w-full sm:w-auto font-semibold cursor-pointer"
+                    >
+                        <option value="all">All Time</option>
+                        <option value="1">Past 1 Month</option>
+                        <option value="2">Past 2 Months</option>
+                        <option value="3">Past 3 Months</option>
+                        <option value="6">Past 6 Months</option>
+                        <option value="9">Past 9 Months</option>
+                        <option value="12">Past 12 Months</option>
+                    </select>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
@@ -421,6 +448,7 @@ const Dashboard = () => {
                         <p className="text-4xl font-bold text-yellow-500">{metrics.pending}</p>
                     </div>
                 </div>
+                
 
                 {isAdminOrSuper && (
                     <div className="mt-8 px-2 pb-10">

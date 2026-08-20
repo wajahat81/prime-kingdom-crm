@@ -2,16 +2,19 @@ import apiClient from './apiClient';
 import { API_ROUTES } from '../utils/constants';
 
 export const login = async (email, password) => {
-    // OAuth2PasswordRequestForm expects 'username' field
-    const formData = new FormData();
-    formData.append('username', email);  // ✅ Use 'username' not 'email'
-    formData.append('password', password);
+    // Check if this computer has a hardware token stored
+    const deviceToken = localStorage.getItem('trusted_device_token');
     
-    const response = await apiClient.post(API_ROUTES.LOGIN, formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data',  // ✅ Required for OAuth2 form
+    // Send the token securely in the headers
+    const response = await apiClient.post('/api/v1/auth/login', 
+        { username: email, password: password }, 
+        { 
+            headers: { 
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Device-Token': deviceToken || '' // Send it if it exists
+            } 
         }
-    });
+    );
     return response.data;
 };
 

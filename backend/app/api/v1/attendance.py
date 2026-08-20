@@ -68,8 +68,8 @@ async def check_out(current_user: dict = Depends(get_current_active_user)):
         current_time = datetime.now(timezone.utc)
         
         # 9-HOUR HARD CAP FOR MANUAL CHECKOUTS
-        if current_time - check_in_time >= timedelta(hours=9):
-            actual_check_out = (check_in_time + timedelta(hours=9)).isoformat()
+        if current_time - check_in_time >= timedelta(minutes=540):
+            actual_check_out = (check_in_time + timedelta(minutes=540)).isoformat()
         else:
             actual_check_out = current_time.isoformat()
         
@@ -106,8 +106,8 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
                 check_in_time = datetime.fromisoformat(record['check_in'].replace('Z', '+00:00'))
                 current_time = datetime.now(timezone.utc)
                 
-                if current_time - check_in_time >= timedelta(hours=9):
-                    auto_check_out_time = (check_in_time + timedelta(hours=9)).isoformat()
+                if current_time - check_in_time >= timedelta(minutes=540):
+                    auto_check_out_time = (check_in_time + timedelta(minutes=540)).isoformat()
                     
                     # Force close the shift in the database
                     supabase.table('attendance').update({

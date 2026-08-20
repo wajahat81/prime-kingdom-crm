@@ -3,16 +3,12 @@ from jose import jwt
 import bcrypt
 import os
 
-# Add these FastAPI imports
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+# Updated FastAPI imports for Cookie Auth
+from fastapi import Depends, HTTPException, status, Request
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-for-local-dev")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "6396db6a-f393-476b-9abc-d0bb78de1834")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 12
-
-# Tell FastAPI where the frontend goes to get the token
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     try:
@@ -48,24 +44,36 @@ def decode_access_token(token: str) -> dict:
     except jwt.JWTError:
         raise Exception("Invalid token")
 
-# --- ADD THIS NEW FUNCTION TO THE BOTTOM ---
 
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    """Extracts the JWT token from the request header and returns the user data."""
+# --- UPDATED TO READ FROM SECURE COOKIE ---
+# --- UPDATED TO READ FROM SECURE COOKIE ---
+async def get_current_user(request: Request) -> dict:
+    """Extracts the JWT token from the secure cookie and returns the user data."""
     try:
+        # Read the exact token from the request cookies
+        token = request.cookies.get("access_token")
+        
+        if not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, 
+                detail="Not authenticated. Missing secure cookie."
+            )
+            
+        # FIX: We completely removed the token.replace("Bearer ", "") line!
+        
         payload = decode_access_token(token)
         user_id: str = payload.get("sub")
+        
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED, 
                 detail="Could not validate credentials"
             )
-        # Return a dictionary containing the user's ID so the auth router can use it
+            
         return {"id": user_id, "role": payload.get("role")}
         
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e),
-            headers={"WWW-Authenticate": "Bearer"},
+            detail=str(e)
         )

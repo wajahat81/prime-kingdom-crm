@@ -4,6 +4,7 @@ from typing import Optional
 from app.db.session import supabase
 from app.core.permissions import require_role
 from app.core.security import get_password_hash
+import uuid
 
 router = APIRouter()
 
@@ -12,6 +13,7 @@ class ProfileFullAdminUpdateInternal(BaseModel):
     full_name: str
     password: Optional[str] = None
     role: str
+    dialing_id: Optional[str] = None # Added dialing_id to the schema!
 
 @router.get("/")
 async def get_users(
@@ -39,7 +41,8 @@ async def admin_edit_user_profile(
         update_data = {
             "full_name": profile_update.full_name,
             "role": profile_update.role,
-            "email": profile_update.email
+            "email": profile_update.email,
+            "dialing_id": profile_update.dialing_id # Added dialing_id to the DB update!
         }
         
         # FIXED: Use 'password_hash' to match your database schema exactly
@@ -85,5 +88,25 @@ async def admin_delete_user_account(
         return {"message": "User account deleted successfully"}
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{profile_id}/trust-device")
+async def trust_device(
+    profile_id: str,
+    current_user: dict = Depends(require_role(["admin", "super_admin"]))
+):
+    """Generates a permanent hardware token and assigns it to a user."""
+    try:
+        new_device_token = str(uuid.uuid4())
+        
+        response = supabase.table('profiles').update(
+            {"device_token": new_device_token}
+        ).eq('id', profile_id).execute()
+        
+        if not response.data:
+            raise HTTPException(status_code=404, detail="User not found")
+            
+        return {"message": "Device trusted", "device_token": new_device_token}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

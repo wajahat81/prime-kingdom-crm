@@ -2,7 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
-from app.api.v1 import auth, calls, attendance, announcements, users
+from app.api.v1 import auth, calls, attendance, announcements, users, leaves
 from app.limiter import limiter  # Use this imported limiter
 
 app = FastAPI(title="Prime Kingdom CRM API")
@@ -34,3 +34,4 @@ app.include_router(calls.router, prefix="/api/v1/calls", tags=["calls"])
 app.include_router(attendance.router, prefix="/api/v1/attendance", tags=["attendance"])
 app.include_router(announcements.router, prefix="/api/v1/announcements", tags=["announcements"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
+app.include_router(leaves.router, prefix="/api/v1/leaves", tags=["Leaves"])

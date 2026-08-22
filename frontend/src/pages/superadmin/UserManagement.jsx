@@ -222,7 +222,7 @@ const UserManagement = () => {
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Email Address (Optional)</label>
-                                <input type="email" name="email" value={formData.email} onChange={handleAddChange} required className="input-base" />
+                                <input type="email" name="email" value={formData.email} onChange={handleAddChange} className="input-base" />
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Temporary Password</label>

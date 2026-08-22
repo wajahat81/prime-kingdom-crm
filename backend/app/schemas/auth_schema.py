@@ -8,7 +8,7 @@ class Token(BaseModel):
     user: Optional[dict] = None
 
 class UserCreate(BaseModel):
-    email: str
+    email: Optional[str] = None
     password: str
     full_name: str
     role: str = "employee"

@@ -13,7 +13,8 @@ const UserManagement = () => {
     const [users, setUsers] = useState([]);
     const [loadingUsers, setLoadingUsers] = useState(true);
     const [formData, setFormData] = useState({ email: '', password: '', full_name: '', role: 'employee', dialing_id: '' });
-    
+    const [searchTerm, setSearchTerm] = useState('');
+
     const [editingUser, setEditingUser] = useState(null);
     const [editFormData, setEditFormData] = useState({ full_name: '', email: '', password: '', role: '', dialing_id: '' });
     
@@ -138,7 +139,13 @@ const UserManagement = () => {
         }
     };
     // --------------------------------
-
+    const filteredUsers = users.filter((user) => {
+        const lowerCaseSearch = searchTerm.toLowerCase();
+        const matchName = user.full_name?.toLowerCase().includes(lowerCaseSearch);
+        const matchDialingId = user.dialing_id?.includes(lowerCaseSearch);
+        return matchName || matchDialingId;
+    });
+    
     return (
         <PageWrapper title="Manage Users">
             <Modal 
@@ -234,7 +241,27 @@ const UserManagement = () => {
                 </div>
 
                 <div className="xl:col-span-2">
-                    <div className="card-base flex flex-col min-h-[500px] w-full">
+                    <div className="card-base flex flex-col min-h-[500px] w-full overflow-hidden">
+
+                        {/* --- SEARCH BAR UI --- */}
+                        <div className="p-4 md:px-6 border-b border-gray-100 bg-gray-50/50">
+                            <div className="relative">
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="Search by Name or Dialing ID..."
+                                    value={searchTerm}
+                                    onChange={(e) => setSearchTerm(e.target.value)}
+                                    className="pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg w-full sm:w-2/3 focus:outline-none focus:ring-2 focus:ring-prime-primary focus:border-transparent text-sm transition-all"
+                                />
+                            </div>
+                        </div>
+                        {/* --------------------- */}
+
                         <div className="overflow-x-auto w-full flex-grow">
                             <table className="min-w-full">
                                 <thead>
@@ -246,7 +273,8 @@ const UserManagement = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white">
-                                    {users.map((u) => (
+                                    {/* CHANGED FROM users.map TO filteredUsers.map */}
+                                    {filteredUsers.map((u) => (
                                         <tr key={u.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors group">
                                             <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                                                 <div className="text-sm font-bold text-gray-800">{u.full_name || 'N/A'}</div>
@@ -262,10 +290,9 @@ const UserManagement = () => {
                                             </td>
                                             <td className="px-4 md:px-6 py-4 whitespace-nowrap text-right">
                                                 <div className="flex items-center justify-end gap-2">
-                                                    
-                                                    {/* TRUST DEVICE BUTTON */}
+
                                                     {u.role !== 'admin' && u.role !== 'super_admin' && (
-                                                        <button 
+                                                        <button
                                                             onClick={() => handleTrustDevice(u.id, u.full_name)}
                                                             className="bg-purple-600 text-white px-3 py-1.5 rounded-md hover:bg-purple-700 transition-colors shadow-sm text-xs font-bold mr-2"
                                                             title="Lock account to this physical computer"
@@ -284,6 +311,15 @@ const UserManagement = () => {
                                             </td>
                                         </tr>
                                     ))}
+
+                                    {/* UPDATE EMPTY STATE TO CHECK FILTERED USERS */}
+                                    {filteredUsers.length === 0 && (
+                                        <tr>
+                                            <td colSpan="4" className="px-6 py-12 text-center text-gray-500">
+                                                {searchTerm ? `No users found matching "${searchTerm}"` : 'No users found.'}
+                                            </td>
+                                        </tr>
+                                    )}
                                 </tbody>
                             </table>
                         </div>

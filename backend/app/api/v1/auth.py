@@ -88,10 +88,14 @@ async def register_user(
 ):
     """Register a new user with an optional dialing_id (Admin only)."""
     try:
-        # Check if email already exists
-        check_email = supabase.table('profiles').select('email').eq('email', user_data.email).execute()
-        if check_email.data:
-            raise HTTPException(status_code=400, detail="Email already registered")
+        # 1. Convert empty strings to None
+        processed_email = user_data.email.strip() if user_data.email and user_data.email.strip() != "" else None
+
+        # 2. Check if email already exists ONLY if an email was provided
+        if processed_email:
+            check_email = supabase.table('profiles').select('email').eq('email', processed_email).execute()
+            if check_email.data:
+                raise HTTPException(status_code=400, detail="Email already registered")
             
         # Check if dialing_id already exists (if provided)
         if getattr(user_data, 'dialing_id', None):
@@ -102,7 +106,7 @@ async def register_user(
         # Create new user
         new_user = {
             "id": str(uuid.uuid4()),
-            "email": user_data.email,
+            "email": processed_email, # Uses the processed None or the actual email
             "full_name": user_data.full_name,
             "role": user_data.role,
             "dialing_id": getattr(user_data, 'dialing_id', None),

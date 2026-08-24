@@ -111,7 +111,7 @@ const AttendanceLogs = () => {
                         <thead>
                             <tr className="border-b border-gray-100">
                                 <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Employee</th>
-                                <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Clock In / Out</th>
+                                <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Check In / Out</th>
                                 <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Total Time</th>
                                 <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Status</th>
                                 <th className="px-6 py-6 text-right text-[13px] font-bold text-gray-400">Actions</th>

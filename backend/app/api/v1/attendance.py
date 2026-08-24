@@ -132,6 +132,24 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
         print(f"Get status error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ==========================================
+# HISTORY ROUTES (ORDER IS CRITICAL)
+# ==========================================
+
+@router.get("/history/me")
+async def get_my_attendance_history(current_user: dict = Depends(get_current_active_user)):
+    """Employee gets their own attendance history."""
+    try:
+        response = supabase.table('attendance') \
+            .select('*') \
+            .eq('employee_id', current_user['id']) \
+            .order('date', desc=True) \
+            .execute()
+        return {"data": response.data if response.data else []}
+    except Exception as e:
+        print(f"Get my history error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/history/{employee_id}")
 async def get_attendance_history(
     employee_id: str,
@@ -146,7 +164,7 @@ async def get_attendance_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 # ==========================================
-# NEW ENDPOINTS FOR ADMIN MANUAL ACTIONS
+# ADMIN ROUTES
 # ==========================================
 
 @router.put("/{log_id}/status")
@@ -196,15 +214,11 @@ async def get_attendance_by_date(
 ):
     """Fetch all attendance records for a specific YYYY-MM-DD date."""
     try:
-        # FIX 1: Changed table name to 'attendance'
-        # FIX 2: Using gte and lte to perfectly capture the entire day's timestamps
-        start_of_day = f"{target_date}T00:00:00"
-        end_of_day = f"{target_date}T23:59:59"
-        
+        # FIX: Query the explicit 'date' column instead of the check_in timestamp.
+        # This guarantees it matches the exact day regardless of when the timestamp was generated!
         response = supabase.table('attendance') \
             .select('*') \
-            .gte('check_in', start_of_day) \
-            .lte('check_in', end_of_day) \
+            .eq('date', target_date) \
             .execute()
             
         return {"data": response.data or []}

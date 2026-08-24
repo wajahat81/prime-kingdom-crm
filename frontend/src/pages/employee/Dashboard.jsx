@@ -375,7 +375,7 @@ const Dashboard = () => {
                 </div>
 
                 {/* DAILY STATS: New Date Max Constraint & Commission Box */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3 sm:gap-4">
+                <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                     <h2 className="text-lg font-semibold text-gray-800">Daily Stats</h2>
                     <input 
                         type="date" 
@@ -401,7 +401,7 @@ const Dashboard = () => {
                 </div>
 
                 {/* WEEKLY STATS: New Week Max Constraint */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3 sm:gap-4">
+                <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
     <h2 className="text-lg font-semibold text-gray-800">Weekly Stats</h2>
     <input 
         type="week" 
@@ -422,7 +422,7 @@ const Dashboard = () => {
                     </div>
                 </div>
 
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 mb-4 gap-4">
+                <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                     <h2 className="text-lg font-semibold text-gray-800">All-Time Stats</h2>
                     <select 
                         value={allTimeFilter}
@@ -453,7 +453,7 @@ const Dashboard = () => {
                 {isAdminOrSuper && (
                     <div className="mt-8 pb-10">
                         {/* --- ADDED DATE FILTER HERE --- */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+                        <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                             <h2 className="text-lg font-semibold text-gray-800">All Agents Daily Record</h2>
                             <input 
                                 type="date" 

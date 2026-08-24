@@ -375,7 +375,7 @@ const Dashboard = () => {
                 </div>
 
                 {/* DAILY STATS: New Date Max Constraint & Commission Box */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 mb-4 gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3 sm:gap-4">
                     <h2 className="text-lg font-semibold text-gray-800">Daily Stats</h2>
                     <input 
                         type="date" 
@@ -401,17 +401,17 @@ const Dashboard = () => {
                 </div>
 
                 {/* WEEKLY STATS: New Week Max Constraint */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between px-2 mb-4 gap-4">
-                    <h2 className="text-lg font-semibold text-gray-800">Weekly Stats</h2>
-                    <input 
-                        type="week" 
-                        value={selectedWeek}
-                        max={getCurrentWeekStr()}
-                        onChange={(e) => setSelectedWeek(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm w-full sm:w-auto font-semibold cursor-pointer"
-                    />
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3 sm:gap-4">
+    <h2 className="text-lg font-semibold text-gray-800">Weekly Stats</h2>
+    <input 
+        type="week" 
+        value={selectedWeek}
+        max={getCurrentWeekStr()}
+        onChange={(e) => setSelectedWeek(e.target.value)}
+        className="input-base text-sm py-2 px-4 shadow-sm w-full sm:w-auto font-semibold cursor-pointer"
+    />
+</div>
+<div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
                         <p className="text-4xl font-bold text-emerald-500">{weeklyMetrics.retained}</p>

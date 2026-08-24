@@ -8,7 +8,7 @@ const PageWrapper = ({ title, children }) => {
 
     return (
         // Optimised for mobile view: strict padding and full width
-        <div className="w-full max-w-full px-4 sm:px-6 md:px-8 py-6 mx-auto page-transition overflow-x-hidden">
+        <div className="w-full max-w-full px-4 sm:px-6 md:px-8 py-6 mx-auto page-transition">
             {children}
         </div>
     );

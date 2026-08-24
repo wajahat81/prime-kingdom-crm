@@ -382,7 +382,7 @@ const Dashboard = () => {
                         value={selectedDate}
                         max={getLocalDateStr()}
                         onChange={(e) => setSelectedDate(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm w-full sm:w-auto font-semibold cursor-pointer"
+                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
                     />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 px-2">
@@ -408,7 +408,7 @@ const Dashboard = () => {
         value={selectedWeek}
         max={getCurrentWeekStr()}
         onChange={(e) => setSelectedWeek(e.target.value)}
-        className="input-base text-sm py-2 px-4 shadow-sm w-full sm:w-auto font-semibold cursor-pointer"
+        className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
     />
 </div>
 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
@@ -427,7 +427,7 @@ const Dashboard = () => {
                     <select 
                         value={allTimeFilter}
                         onChange={(e) => setAllTimeFilter(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm w-full sm:w-auto font-semibold cursor-pointer"
+                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
                     >
                         <option value="all">All Time</option>
                         <option value="1">Past 1 Month</option>
@@ -460,7 +460,7 @@ const Dashboard = () => {
                                 value={selectedDate}
                                 max={getLocalDateStr()}
                                 onChange={(e) => setSelectedDate(e.target.value)}
-                                className="input-base text-sm py-2 px-4 shadow-sm w-full sm:w-auto font-semibold cursor-pointer"
+                                className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
                             />
                         </div>
                         {/* ------------------------------ */}

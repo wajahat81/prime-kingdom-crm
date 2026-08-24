@@ -451,10 +451,20 @@ const Dashboard = () => {
                 
 
                 {isAdminOrSuper && (
-                    <div className="mt-8 px-2 pb-10">
-                        <div className="flex items-center justify-between mb-4">
-                            <h2 className="text-lg font-semibold text-gray-800">All Agents Daily Record ({selectedDate})</h2>
+                    <div className="mt-8 pb-10">
+                        {/* --- ADDED DATE FILTER HERE --- */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
+                            <h2 className="text-lg font-semibold text-gray-800">All Agents Daily Record</h2>
+                            <input 
+                                type="date" 
+                                value={selectedDate}
+                                max={getLocalDateStr()}
+                                onChange={(e) => setSelectedDate(e.target.value)}
+                                className="input-base text-sm py-2 px-4 shadow-sm w-full sm:w-auto font-semibold cursor-pointer"
+                            />
                         </div>
+                        {/* ------------------------------ */}
+                        
                         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left border-collapse">
@@ -475,13 +485,13 @@ const Dashboard = () => {
                                                     <td className="p-4 text-sm text-gray-600">{emp.dialingId !== 'N/A' ? `#${emp.dialingId}` : '-'}</td>
                                                     <td className="p-4 text-sm font-bold text-emerald-600">{emp.retained}</td>
                                                     <td className="p-4 text-sm font-bold text-yellow-600">{emp.pending}</td>
-                                                    <td className="p-4 text-sm font-bold text-prime-primary">Rs. {emp.commission.toFixed(2)}</td>
+                                                    <td className="p-4 text-sm font-bold text-prime-primary">Rs. {emp.commission}</td>
                                                 </tr>
                                             ))
                                         ) : (
                                             <tr>
                                                 <td colSpan="5" className="p-8 text-center text-sm text-gray-500">
-                                                    No agents available.
+                                                    No agents available for this date.
                                                 </td>
                                             </tr>
                                         )}

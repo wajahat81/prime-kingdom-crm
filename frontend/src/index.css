@@ -6,16 +6,14 @@
 
 html {
     font-size: 12.8px !important;
-    height: 100%;
-    overflow: hidden !important; /* Kills the outer scrollbar permanently */
+    /* Removed height and overflow restrictions here */
 }
 
 body, #root {
     background-color: #f9fafb;
     margin: 0;
     padding: 0;
-    height: 100%;
-    overflow: hidden !important; /* Kills the outer scrollbar permanently */
+    /* Removed height and overflow restrictions here */
 }
 
 @layer utilities {

@@ -11,7 +11,8 @@ function App() {
     return (
         <AuthProvider>
             <Router>
-                <div className="flex h-screen overflow-hidden bg-prime-bg text-prime-text">
+                {/* Changed to min-h-screen and removed overflow-hidden */}
+                <div className="flex min-h-screen bg-prime-bg text-prime-text">
                     
                     {/* Mobile Overlay - Closes menu when clicking outside */}
                     {isMobileMenuOpen && (
@@ -21,16 +22,21 @@ function App() {
                         ></div>
                     )}
 
-                    {/* Sidebar Container - Slides in on mobile, static on desktop */}
-                    <div className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-auto ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                    {/* Sidebar Container - Changed lg:static to lg:sticky lg:top-0 lg:h-screen to pin it on desktop */}
+                    <div className={`fixed inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-in-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <Sidebar closeMobileMenu={() => setIsMobileMenuOpen(false)} />
                     </div>
 
-                    {/* Main Content Area */}
-                    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                        <Navbar toggleMobileMenu={() => setIsMobileMenuOpen(true)} />
+                    {/* Main Content Area - Removed overflow-hidden */}
+                    <div className="flex-1 flex flex-col min-w-0">
                         
-                        <div className="flex-1 overflow-y-auto">
+                        {/* Made Navbar sticky so it stays visible while scrolling the body */}
+                        <div className="sticky top-0 z-30 bg-prime-bg">
+                            <Navbar toggleMobileMenu={() => setIsMobileMenuOpen(true)} />
+                        </div>
+                        
+                        {/* Removed overflow-y-auto so it scrolls with the natural body */}
+                        <div className="flex-1">
                             <AppRouter />
                         </div>
                     </div>

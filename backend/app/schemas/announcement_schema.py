@@ -3,6 +3,7 @@ from typing import Optional
 
 class AnnouncementCreate(BaseModel):
     message: str = Field(..., min_length=5, max_length=255, strip_whitespace=True)
+    target_role: str = "all"
 
 class AnnouncementResponse(BaseModel):
     id: str

@@ -182,7 +182,7 @@ const Navbar = ({ toggleMobileMenu }) => {
                 <div className="flex items-center">
                     {shiftStatus === 'not_checked_in' && (
                         <button onClick={() => setConfirmAction({ isOpen: true, type: 'in' })} disabled={isProcessing} className="px-3 py-1.5 md:px-4 bg-prime-primary text-white hover:bg-prime-secondary rounded-full text-[10px] md:text-xs font-bold transition-colors whitespace-nowrap">
-                            Commence Shift
+                            Start Shift
                         </button>
                     )}
                     {shiftStatus === 'checked_in' && (

@@ -188,3 +188,26 @@ async def update_times(
     except Exception as e:
         print(f"Update times error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/date/{target_date}")
+async def get_attendance_by_date(
+    target_date: str, 
+    current_user: dict = Depends(require_role(["admin", "super_admin"]))
+):
+    """Fetch all attendance records for a specific YYYY-MM-DD date."""
+    try:
+        # FIX 1: Changed table name to 'attendance'
+        # FIX 2: Using gte and lte to perfectly capture the entire day's timestamps
+        start_of_day = f"{target_date}T00:00:00"
+        end_of_day = f"{target_date}T23:59:59"
+        
+        response = supabase.table('attendance') \
+            .select('*') \
+            .gte('check_in', start_of_day) \
+            .lte('check_in', end_of_day) \
+            .execute()
+            
+        return {"data": response.data or []}
+    except Exception as e:
+        print(f"Attendance Fetch Error: {e}") 
+        raise HTTPException(status_code=500, detail=str(e))

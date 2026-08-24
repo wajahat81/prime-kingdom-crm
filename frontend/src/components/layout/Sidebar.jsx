@@ -10,8 +10,18 @@ const Sidebar = ({ closeMobileMenu }) => {
 
     const getNavItems = () => {
         const items = [];
+        
+        // Everyone gets the Dashboard
         items.push({ path: '/dashboard', label: 'Dashboard' });
-        items.push({ path: '/leaves', label: 'Leave Requests' });
+
+        // Agent & Closer specific links
+        if (user?.role === 'employee' || user?.role === 'closer' || user?.role === ROLES.EMPLOYEE) {
+            items.push({ path: '/announcements', label: 'Announcements' });
+            items.push({ path: '/attendance', label: 'My Attendance' });
+            items.push({ path: '/leaves', label: 'Leave Requests' });
+        }
+
+        // Admin & Super Admin specific links
         if (user?.role === ROLES.ADMIN || user?.role === ROLES.SUPER_ADMIN) {
             items.push({ path: '/admin/calls/manage', label: 'Call Logs' });
             items.push({ path: '/admin/attendance', label: 'Attendance' });
@@ -19,15 +29,15 @@ const Sidebar = ({ closeMobileMenu }) => {
             items.push({ path: '/admin/users', label: 'Manage Users' }); 
         }
         
+        // Super Admin only links
         if (user?.role === ROLES.SUPER_ADMIN) {
-            items.push({ path: '/admin/announcements', label: 'Announcements' }); 
+            items.push({ path: '/admin/announcements', label: 'Manage Announcements' }); 
         }
         
         return items;
     };
 
     return (
-        /* Removed 'sticky', 'top-*', and 'h-screen'. Using 'h-full' to perfectly fill the App.jsx container */
         <div className="w-[260px] bg-white border-r border-prime-border flex flex-col h-full z-20 flex-shrink-0">
             
             {/* Mobile Header (Hidden on Desktop) */}

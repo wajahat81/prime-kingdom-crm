@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from pydantic import BaseModel, Field
+from datetime import date
 
 class Token(BaseModel):
     access_token: str
@@ -12,7 +13,8 @@ class UserCreate(BaseModel):
     password: str
     full_name: str
     role: str = "employee"
-    dialing_id: Optional[str] = None
+    dialing_id: str = None
+    joining_date: date = None
 
 class UserLogin(BaseModel):
     email: str

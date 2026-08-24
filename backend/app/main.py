@@ -4,10 +4,19 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from app.api.v1 import auth, calls, attendance, announcements, users, leaves
 from app.limiter import limiter  # Use this imported limiter
+import os
 
-app = FastAPI(title="Prime Kingdom CRM API")
-app.state.limiter = limiter  # This now uses the imported limiter
-app.add_exception_handler(429, _rate_limit_exceeded_handler)
+# Check if we are in production (default to 'development' if not set)
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+
+# Initialize FastAPI with conditional documentation URLs
+app = FastAPI(
+    title="Prime Kingdom CRM API",
+    docs_url=None if ENVIRONMENT == "production" else "/docs",
+    redoc_url=None if ENVIRONMENT == "production" else "/redoc",
+    openapi_url=None if ENVIRONMENT == "production" else "/openapi.json"
+)
+
 
 # CORS configuration
 app.add_middleware(

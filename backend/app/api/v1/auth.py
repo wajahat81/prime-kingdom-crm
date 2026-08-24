@@ -86,18 +86,18 @@ async def register_user(
     user_data: UserCreate,
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Register a new user with an optional dialing_id (Admin only)."""
+    """Register a new user with optional email/dialing_id and joining_date."""
     try:
-        # 1. Convert empty strings to None
+        # Convert empty strings to None
         processed_email = user_data.email.strip() if user_data.email and user_data.email.strip() != "" else None
 
-        # 2. Check if email already exists ONLY if an email was provided
+        # Check if email already exists
         if processed_email:
             check_email = supabase.table('profiles').select('email').eq('email', processed_email).execute()
             if check_email.data:
                 raise HTTPException(status_code=400, detail="Email already registered")
             
-        # Check if dialing_id already exists (if provided)
+        # Check if dialing_id already exists
         if getattr(user_data, 'dialing_id', None):
             check_did = supabase.table('profiles').select('dialing_id').eq('dialing_id', user_data.dialing_id).execute()
             if check_did.data:
@@ -106,11 +106,12 @@ async def register_user(
         # Create new user
         new_user = {
             "id": str(uuid.uuid4()),
-            "email": processed_email, # Uses the processed None or the actual email
+            "email": processed_email,
             "full_name": user_data.full_name,
             "role": user_data.role,
             "dialing_id": getattr(user_data, 'dialing_id', None),
-            "password_hash": get_password_hash(user_data.password)
+            "password_hash": get_password_hash(user_data.password),
+            "joining_date": user_data.joining_date.isoformat() if user_data.joining_date else None
         }
         
         response = supabase.table('profiles').insert(new_user).execute()

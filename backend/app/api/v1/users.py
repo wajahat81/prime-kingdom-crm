@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from typing import Optional
 from app.db.session import supabase
 from app.core.permissions import require_role
@@ -8,12 +8,14 @@ import uuid
 
 router = APIRouter()
 
+# FIXED: Changed email to Optional[str] and added joining_date
 class ProfileFullAdminUpdateInternal(BaseModel):
-    email: EmailStr
+    email: Optional[str] = None
     full_name: str
     password: Optional[str] = None
     role: str
-    dialing_id: Optional[str] = None # Added dialing_id to the schema!
+    dialing_id: Optional[str] = None
+    joining_date: Optional[str] = None 
 
 @router.get("/")
 async def get_users(
@@ -22,7 +24,8 @@ async def get_users(
 ):
     """Get all users, optionally filtered by role."""
     try:
-        query = supabase.table('profiles').select('id, email, full_name, role, dialing_id, created_at')
+        # FIXED: Added joining_date to the select query so the frontend can display it
+        query = supabase.table('profiles').select('id, email, full_name, role, dialing_id, joining_date, created_at')
         if role:
             query = query.eq('role', role)
         response = query.execute()
@@ -38,14 +41,15 @@ async def admin_edit_user_profile(
 ):
     """Securely updates a user profile matching your exact database column names."""
     try:
+        # FIXED: Added joining_date to the payload sent to Supabase
         update_data = {
             "full_name": profile_update.full_name,
             "role": profile_update.role,
             "email": profile_update.email,
-            "dialing_id": profile_update.dialing_id # Added dialing_id to the DB update!
+            "dialing_id": profile_update.dialing_id,
+            "joining_date": profile_update.joining_date 
         }
         
-        # FIXED: Use 'password_hash' to match your database schema exactly
         if profile_update.password and profile_update.password.strip() != "":
             update_data['password_hash'] = get_password_hash(profile_update.password)
 

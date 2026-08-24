@@ -19,7 +19,6 @@ import ChangePassword from '../pages/auth/ChangePassword';
 import LeaveRequest from '../pages/employee/LeaveRequest';
 import LeaveManagement from '../pages/admin/LeaveManagement';
 
-
 const AppRouter = () => {
     return (
         <Routes>
@@ -28,13 +27,12 @@ const AppRouter = () => {
             <Route path="/login" element={<PageWrapper title="Sign In"><Login /></PageWrapper>} />
             <Route path="/forgot-password" element={<PageWrapper title="Recover Account"><ForgotPassword /></PageWrapper>} />
 
-            {/* Dashboard & User Settings - accessible by all authenticated users */}
-            <Route element={<ProtectedRoute allowedRoles={['employee', 'admin', 'super_admin']} />}>
+            {/* Dashboard & User Settings - ADDED 'closer' TO ALLOWED ROLES */}
+            <Route element={<ProtectedRoute allowedRoles={['employee', 'closer', 'admin', 'super_admin']} />}>
                 <Route path="/dashboard" element={<PageWrapper title="Dashboard"><EmployeeDashboard /></PageWrapper>} />
                 <Route path="/attendance" element={<PageWrapper title="My Attendance"><Attendance /></PageWrapper>} />
                 <Route path="/announcements" element={<PageWrapper title="Bulletins"><Announcements /></PageWrapper>} />
                 <Route path="/leaves" element={<PageWrapper title="Leave Requests"><LeaveRequest /></PageWrapper>} />
-
                 <Route path="/change-password" element={<PageWrapper title="Change Password"><ChangePassword /></PageWrapper>} />
             </Route>
 

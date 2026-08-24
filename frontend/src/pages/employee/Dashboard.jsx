@@ -3,7 +3,10 @@ import apiClient from '../../services/apiClient';
 import AnnouncementBanner from '../../components/layout/AnnouncementBanner';
 import AnnouncementModal from '../../components/layout/AnnouncementModal';
 import PageWrapper from '../../components/layout/PageWrapper';
+
 import { useAuth } from '../../context/AuthContext';
+import { createPortal } from 'react-dom';
+
 
 // Helper to get local date string YYYY-MM-DD
 const getLocalDateStr = () => {
@@ -37,22 +40,22 @@ const parseWeek = (weekStr) => {
     const simple = new Date(year, 0, 1 + (week - 1) * 7);
     const dow = simple.getDay();
     const ISOweekStart = simple;
-    
+
     if (dow <= 4) {
         ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
     } else {
         ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
     }
-    
+
     // Shift from ISO Monday start to Sunday start
     const startOfWeek = new Date(ISOweekStart);
     startOfWeek.setDate(startOfWeek.getDate() - 1);
     startOfWeek.setHours(0, 0, 0, 0);
-    
+
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 6);
     endOfWeek.setHours(23, 59, 59, 999);
-    
+
     return { startOfWeek, endOfWeek };
 };
 
@@ -62,14 +65,14 @@ const Dashboard = () => {
 
     const [staffList, setStaffList] = useState([]);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
-    
+
     // Date Filters
     const [selectedDate, setSelectedDate] = useState(getLocalDateStr());
     const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekStr());
-    
+
     // Call Data
     const [allCalls, setAllCalls] = useState([]);
-    
+
     // Processed Metrics
     const [metrics, setMetrics] = useState({ retained: 0, pending: 0 });
     const [weeklyMetrics, setWeeklyMetrics] = useState({ retained: 0, pending: 0 });
@@ -88,8 +91,10 @@ const Dashboard = () => {
 
     useEffect(() => {
         const checkShiftStatus = async () => {
-            if (!user) return; 
-            if (user.role !== 'employee') return; 
+            if (!user) return;
+            
+            // FIXED: Now checks for BOTH employee (Agent) and closer roles
+            if (user.role !== 'employee' && user.role !== 'closer') return;
 
             try {
                 const response = await apiClient.get('/api/v1/attendance/status');
@@ -121,10 +126,11 @@ const Dashboard = () => {
                 try {
                     const res = await apiClient.get('/api/v1/users/');
                     const allUsers = res.data.data || res.data || [];
-                    
-                    const employeesOnly = allUsers.filter(u => u.role === 'employee');
+
+                    // Included 'closer' role for full visibility
+                    const employeesOnly = allUsers.filter(u => u.role === 'employee' || u.role === 'closer');
                     setStaffList(employeesOnly);
-                    
+
                     if (employeesOnly.length > 0) {
                         setSelectedEmployeeId(employeesOnly[0].id);
                     }
@@ -174,8 +180,7 @@ const Dashboard = () => {
 
         let totalComm = 0, weeklyComm = 0, dailyComm = 0;
 
-
-       // All-Time (with Month Filter)
+        // All-Time (with Month Filter)
         let filteredAllCalls = targetCalls;
         if (allTimeFilter !== 'all') {
             const monthsToSubtract = parseInt(allTimeFilter);
@@ -225,37 +230,38 @@ const Dashboard = () => {
         setWeeklyMetrics(calcWeek);
         setDailyMetrics(calcDay);
         setCommission({ total: totalComm, weekly: weeklyComm, daily: dailyComm });
-        
+
         // Admin Table: Calculate ALL agents for the selected DATE
         if (isAdminOrSuper && staffList.length > 0) {
-             const allDayCalls = allCalls.filter(call => {
-                 const callDate = new Date(call.created_at);
-                 return callDate >= targetDayStart && callDate <= targetDayEnd;
-             });
-             
-             const tableData = staffList.map(emp => {
-                 const empCalls = allDayCalls.filter(c => c.employee_id === emp.id);
-                 let empRetained = 0, empPending = 0, empComm = 0;
-                 
-                 empCalls.forEach(call => {
-                     if (call.status === 'retained') {
-                         empRetained += 1;
-                         empComm += (call.commission || 0);
-                     }
-                     if (call.status === 'pending') empPending += 1;
-                 });
-                 
-                 return {
-                     id: emp.id,
-                     name: emp.full_name || emp.email,
-                     dialingId: emp.dialing_id || 'N/A',
-                     retained: empRetained,
-                     pending: empPending,
-                     commission: empComm
-                 };
-             });
-             
-             setDailyEmployeeStats(tableData);
+            const allDayCalls = allCalls.filter(call => {
+                const callDate = new Date(call.created_at);
+                return callDate >= targetDayStart && callDate <= targetDayEnd;
+            });
+
+            const tableData = staffList.map(emp => {
+                const empCalls = allDayCalls.filter(c => c.employee_id === emp.id);
+                let empRetained = 0, empPending = 0, empComm = 0;
+
+                empCalls.forEach(call => {
+                    if (call.status === 'retained') {
+                        empRetained += 1;
+                        empComm += (call.commission || 0);
+                    }
+                    if (call.status === 'pending') empPending += 1;
+                });
+
+                return {
+                    id: emp.id,
+                    name: emp.full_name || emp.email,
+                    dialingId: emp.dialing_id || 'N/A',
+                    joiningDate: emp.joining_date || 'N/A', // Pulled into the table data mapping
+                    retained: empRetained,
+                    pending: empPending,
+                    commission: empComm
+                };
+            });
+
+            setDailyEmployeeStats(tableData);
         }
     }, [allCalls, selectedEmployeeId, selectedDate, selectedWeek, isAdminOrSuper, staffList]);
 
@@ -285,9 +291,9 @@ const Dashboard = () => {
         <PageWrapper title="Dashboard">
             <AnnouncementModal />
             <AnnouncementBanner />
-            
-            {needsToStartShift && (
-                <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-md flex items-center justify-center z-[100] p-4 animate-fade-in">
+
+            {needsToStartShift && createPortal(
+                <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in">
                     <div className="bg-white rounded-3xl shadow-card max-w-sm w-full p-8 text-center border border-prime-border transform transition-all">
                         <div className="w-16 h-16 bg-prime-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
                             <svg className="w-8 h-8 text-prime-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -306,48 +312,49 @@ const Dashboard = () => {
                             {isStartingShift ? (
                                 <>
                                     <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                    Commencing...
+                                    Starting...
                                 </>
-                            ) : 'Commence Shift'}
+                            ) : 'OK'}
                         </button>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
-            
+
             <div className="w-full pt-4">
                 {error && <div className="mb-8 bg-red-50 text-red-600 px-6 py-3 rounded-full text-sm font-medium text-center">{error}</div>}
 
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 px-2 gap-4">
                     <div>
                         <h1 className="text-2xl font-bold text-prime-text tracking-tight mb-1">
-                            {isAdminOrSuper 
-                                ? `Dashboard: ${currentViewedEmployee?.full_name || 'Agent'}` 
+                            {isAdminOrSuper
+                                ? `Dashboard: ${currentViewedEmployee?.full_name || 'Agent'}`
                                 : 'My Performance'}
                         </h1>
                     </div>
 
                     {isAdminOrSuper && staffList.length > 0 && (
                         <div className="flex items-center gap-2 w-full md:w-auto">
-                            <button 
+                            <button
                                 onClick={handlePrevEmployee}
                                 className="p-2.5 bg-white border border-gray-200 rounded-full text-gray-400 hover:bg-gray-50 hover:text-prime-primary shadow-sm transition-colors"
                             >
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
                             </button>
-                            
-                            <select 
-                                value={selectedEmployeeId} 
+
+                            <select
+                                value={selectedEmployeeId}
                                 onChange={(e) => setSelectedEmployeeId(e.target.value)}
                                 className="input-base cursor-pointer bg-white font-semibold text-sm min-w-[220px] shadow-sm"
                             >
                                 {staffList.map(emp => (
                                     <option key={emp.id} value={emp.id}>
-                                        {emp.full_name || emp.email} {emp.dialing_id ? `(#${emp.dialing_id})` : ''}
+                                        {emp.full_name} {emp.dialing_id ? `(#${emp.dialing_id})` : ''} - Joined: {emp.joining_date || 'N/A'}
                                     </option>
                                 ))}
                             </select>
-                            
-                            <button 
+
+                            <button
                                 onClick={handleNextEmployee}
                                 className="p-2.5 bg-white border border-gray-200 rounded-full text-gray-400 hover:bg-gray-50 hover:text-prime-primary shadow-sm transition-colors"
                             >
@@ -374,11 +381,11 @@ const Dashboard = () => {
                     </div>
                 </div>
 
-                {/* DAILY STATS: New Date Max Constraint & Commission Box */}
+                {/* DAILY STATS */}
                 <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                     <h2 className="text-lg font-semibold text-gray-800">Daily Stats</h2>
-                    <input 
-                        type="date" 
+                    <input
+                        type="date"
                         value={selectedDate}
                         max={getLocalDateStr()}
                         onChange={(e) => setSelectedDate(e.target.value)}
@@ -400,18 +407,18 @@ const Dashboard = () => {
                     </div>
                 </div>
 
-                {/* WEEKLY STATS: New Week Max Constraint */}
+                {/* WEEKLY STATS */}
                 <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
-    <h2 className="text-lg font-semibold text-gray-800">Weekly Stats</h2>
-    <input 
-        type="week" 
-        value={selectedWeek}
-        max={getCurrentWeekStr()}
-        onChange={(e) => setSelectedWeek(e.target.value)}
-        className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
-    />
-</div>
-<div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
+                    <h2 className="text-lg font-semibold text-gray-800">Weekly Stats</h2>
+                    <input
+                        type="week"
+                        value={selectedWeek}
+                        max={getCurrentWeekStr()}
+                        onChange={(e) => setSelectedWeek(e.target.value)}
+                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
+                    />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
                         <p className="text-4xl font-bold text-emerald-500">{weeklyMetrics.retained}</p>
@@ -421,10 +428,11 @@ const Dashboard = () => {
                         <p className="text-4xl font-bold text-yellow-500">{weeklyMetrics.pending}</p>
                     </div>
                 </div>
-
+                
+                {/* ALL-TIME STATS */}
                 <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                     <h2 className="text-lg font-semibold text-gray-800">All-Time Stats</h2>
-                    <select 
+                    <select
                         value={allTimeFilter}
                         onChange={(e) => setAllTimeFilter(e.target.value)}
                         className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
@@ -448,23 +456,21 @@ const Dashboard = () => {
                         <p className="text-4xl font-bold text-yellow-500">{metrics.pending}</p>
                     </div>
                 </div>
-                
 
+                {/* ADMIN TABLE */}
                 {isAdminOrSuper && (
                     <div className="mt-8 pb-10">
-                        {/* --- ADDED DATE FILTER HERE --- */}
                         <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                             <h2 className="text-lg font-semibold text-gray-800">All Agents Daily Record</h2>
-                            <input 
-                                type="date" 
+                            <input
+                                type="date"
                                 value={selectedDate}
                                 max={getLocalDateStr()}
                                 onChange={(e) => setSelectedDate(e.target.value)}
                                 className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
                             />
                         </div>
-                        {/* ------------------------------ */}
-                        
+
                         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left border-collapse">
@@ -481,7 +487,13 @@ const Dashboard = () => {
                                         {dailyEmployeeStats.length > 0 ? (
                                             dailyEmployeeStats.map(emp => (
                                                 <tr key={emp.id} className="hover:bg-gray-50/50 transition-colors">
-                                                    <td className="p-4 text-sm font-semibold text-gray-800">{emp.name}</td>
+                                                    
+                                                    {/* INJECTED JOINING DATE BENEATH THE NAME */}
+                                                    <td className="p-4 whitespace-nowrap">
+                                                        <div className="text-sm font-semibold text-gray-800">{emp.name}</div>
+                                                        <div className="text-[10px] font-medium text-gray-400 mt-0.5">Joined: {emp.joiningDate}</div>
+                                                    </td>
+
                                                     <td className="p-4 text-sm text-gray-600">{emp.dialingId !== 'N/A' ? `#${emp.dialingId}` : '-'}</td>
                                                     <td className="p-4 text-sm font-bold text-emerald-600">{emp.retained}</td>
                                                     <td className="p-4 text-sm font-bold text-yellow-600">{emp.pending}</td>
@@ -501,7 +513,7 @@ const Dashboard = () => {
                         </div>
                     </div>
                 )}
-                
+
             </div>
         </PageWrapper>
     );

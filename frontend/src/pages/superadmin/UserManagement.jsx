@@ -12,11 +12,11 @@ const UserManagement = () => {
     
     const [users, setUsers] = useState([]);
     const [loadingUsers, setLoadingUsers] = useState(true);
-    const [formData, setFormData] = useState({ email: '', password: '', full_name: '', role: 'employee', dialing_id: '' });
+    const [formData, setFormData] = useState({ joining_date: '', password: '', full_name: '', role: 'employee', dialing_id: '' });
     const [searchTerm, setSearchTerm] = useState('');
 
     const [editingUser, setEditingUser] = useState(null);
-    const [editFormData, setEditFormData] = useState({ full_name: '', email: '', password: '', role: '', dialing_id: '' });
+    const [editFormData, setEditFormData] = useState({ full_name: '', joining_date: '', password: '', role: '', dialing_id: '' });
     
     const [status, setStatus] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -48,7 +48,7 @@ const UserManagement = () => {
                 try {
                     await apiClient.post('/api/v1/auth/register', formData);
                     setStatus({ type: 'success', text: 'User created successfully.' });
-                    setFormData({ email: '', password: '', full_name: '', role: 'employee', dialing_id: '' });
+                    setFormData({ joining_date: '', password: '', full_name: '', role: 'employee', dialing_id: '' });
                     fetchUsers();
                 } catch (error) {
                     const errorMsg = error.response?.data?.detail || 'Failed to create user.';
@@ -83,7 +83,7 @@ const UserManagement = () => {
         setEditingUser(user);
         setEditFormData({ 
             full_name: user.full_name || '', 
-            email: user.email || '', 
+            joining_date: user.joining_date || '', 
             password: '', 
             role: user.role || 'employee',
             dialing_id: user.dialing_id || ''
@@ -176,8 +176,8 @@ const UserManagement = () => {
                             <input type="text" name="dialing_id" value={editFormData.dialing_id} onChange={handleEditChange} pattern="\d{4}" maxLength="4" placeholder="e.g. 1024" className="input-base" />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Email Address</label>
-                            <input type="email" name="email" value={editFormData.email} onChange={handleEditChange} className="input-base" />
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Joining Date</label>
+                            <input type="date" name="joining_date" value={editFormData.joining_date} onChange={handleEditChange} className="input-base" />
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Change Password</label>
@@ -187,6 +187,7 @@ const UserManagement = () => {
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Security Role</label>
                             <select name="role" value={editFormData.role} onChange={handleEditChange} className="input-base cursor-pointer">
                                 <option value="employee">Agent</option>
+                                <option value="closer">Closer</option>
                                 <option value="admin">Admin</option>
                                 {currentUser?.role === 'super_admin' && <option value="super_admin">Super Admin</option>}
                             </select>
@@ -223,13 +224,14 @@ const UserManagement = () => {
                                 <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Role</label>
                                 <select name="role" value={formData.role} onChange={handleAddChange} className="input-base cursor-pointer">
                                     <option value="employee">Agent</option>
+                                    <option value="closer">Closer</option>
                                     <option value="admin">Admin</option>
                                     {currentUser?.role === 'super_admin' && <option value="super_admin">Super Admin</option>}
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Email Address (Optional)</label>
-                                <input type="email" name="email" value={formData.email} onChange={handleAddChange} className="input-base" />
+                                <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Joining Date</label>
+                                <input type="date" name="joining_date" value={formData.joining_date} onChange={handleAddChange} className="input-base" />
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-2">Temporary Password</label>
@@ -278,7 +280,7 @@ const UserManagement = () => {
                                         <tr key={u.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors group">
                                             <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                                                 <div className="text-sm font-bold text-gray-800">{u.full_name || 'N/A'}</div>
-                                                <div className="text-xs font-medium text-gray-500 mt-0.5">{u.email}</div>
+                                                <div className="text-xs font-medium text-gray-500 mt-0.5">Joining Date: {u.joining_date || 'N/A'}</div>
                                             </td>
                                             <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-600">
                                                 {u.dialing_id ? `#${u.dialing_id}` : '-'}

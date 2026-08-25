@@ -73,12 +73,7 @@ const AnnouncementModal = () => {
                 
                 <h2 className="text-2xl font-bold text-prime-text mb-2 tracking-tight">System Broadcast</h2>
                 
-                {/* Optional Tag showing who this is targeted to */}
-                <div className="mb-4">
-                    <span className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
-                        To: {announcement.target_role === 'all' ? 'Everyone' : announcement.target_role + 's'}
-                    </span>
-                </div>
+                
                 
                 <p className="text-prime-text leading-relaxed text-[15px] mb-8 font-medium">
                     {announcement.message}

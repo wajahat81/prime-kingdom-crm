@@ -58,9 +58,8 @@ async def check_in(current_user: dict = Depends(get_current_active_user)):
 
 @router.post("/check-out")
 async def check_out(current_user: dict = Depends(get_current_active_user)):
-    """Employee auto checks out."""
+    """Employee auto checks out with day-aware shift caps."""
     try:
-        # FIXED: Now strictly evaluates the day using PKT
         today = get_pkt_today()
         
         response = supabase.table('attendance').select('*') \
@@ -76,9 +75,20 @@ async def check_out(current_user: dict = Depends(get_current_active_user)):
         check_in_time = datetime.fromisoformat(record['check_in'].replace('Z', '+00:00'))
         current_time = datetime.now(timezone.utc)
         
-        # 9-HOUR HARD CAP FOR MANUAL CHECKOUTS
-        if current_time - check_in_time >= timedelta(minutes=540):
-            actual_check_out = (check_in_time + timedelta(minutes=540)).isoformat()
+        # Determine day of week (0 = Monday, ..., 4 = Friday, 5 = Saturday, 6 = Sunday)
+        # Note: python's weekday() returns 4 for Friday, 5 for Saturday
+        weekday = check_in_time.weekday()
+        
+        if weekday == 4:  # Friday: 7 hours limit
+            max_duration = timedelta(hours=7)
+        elif weekday == 5:  # Saturday: 5 hours 45 minutes limit
+            max_duration = timedelta(hours=5, minutes=45)
+        else:  # Standard days: 9 hours limit
+            max_duration = timedelta(hours=9)
+        
+        # Apply the correct limit cap
+        if current_time - check_in_time >= max_duration:
+            actual_check_out = (check_in_time + max_duration).isoformat()
         else:
             actual_check_out = current_time.isoformat()
         
@@ -96,9 +106,8 @@ async def check_out(current_user: dict = Depends(get_current_active_user)):
 
 @router.get("/status")
 async def get_attendance_status(current_user: dict = Depends(get_current_active_user)):
-    """Get today's exact shift status with auto-checkout enforcement."""
+    """Get today's exact shift status with day-aware auto-checkout enforcement."""
     try:
-        # FIXED: Now strictly evaluates the day using PKT
         today = get_pkt_today()
         current_time = datetime.now(timezone.utc)
         
@@ -112,12 +121,20 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
         if response.data:
             record = response.data[0]
             
-            # --- 9-HOUR AUTO-CHECKOUT LOGIC ---
+            # --- DAY-AWARE AUTO-CHECKOUT LOGIC ---
             if record.get('status') == 'checked_in' and record.get('check_in'):
                 check_in_time = datetime.fromisoformat(record['check_in'].replace('Z', '+00:00'))
+                weekday = check_in_time.weekday()
                 
-                if current_time - check_in_time >= timedelta(minutes=540):
-                    auto_check_out_time = (check_in_time + timedelta(minutes=540)).isoformat()
+                if weekday == 4:  # Friday -> 7 hours
+                    max_duration = timedelta(hours=7)
+                elif weekday == 5:  # Saturday -> 5 hours 45 mins
+                    max_duration = timedelta(hours=5, minutes=45)
+                else:  # Other days -> 9 hours
+                    max_duration = timedelta(hours=9)
+                
+                if current_time - check_in_time >= max_duration:
+                    auto_check_out_time = (check_in_time + max_duration).isoformat()
                     
                     # Force close the shift in the database
                     supabase.table('attendance').update({
@@ -129,7 +146,7 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
                         "status": "checked_out",
                         "check_in_time": record['check_in'],
                         "check_out_time": auto_check_out_time,
-                        "server_time": current_time.isoformat() # ADDED: Required for frontend clock sync
+                        "server_time": current_time.isoformat()
                     }
             # -----------------------------------
 
@@ -137,12 +154,12 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
                 "status": record.get('status', 'checked_out'),
                 "check_in_time": record.get('check_in'),
                 "check_out_time": record.get('check_out'),
-                "server_time": current_time.isoformat() # ADDED: Required for frontend clock sync
+                "server_time": current_time.isoformat()
             }
             
         return {
             "status": "not_checked_in",
-            "server_time": current_time.isoformat() # ADDED: Required for frontend clock sync
+            "server_time": current_time.isoformat()
         }
     except Exception as e:
         print(f"Get status error: {e}")

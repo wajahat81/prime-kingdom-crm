@@ -3,10 +3,10 @@ import apiClient from '../../services/apiClient';
 import AnnouncementBanner from '../../components/layout/AnnouncementBanner';
 import AnnouncementModal from '../../components/layout/AnnouncementModal';
 import PageWrapper from '../../components/layout/PageWrapper';
+import PendingLeaveAlert from '../../components/layout/PendingLeaveAlert';
 
 import { useAuth } from '../../context/AuthContext';
 import { createPortal } from 'react-dom';
-
 
 // Helper to get local date string YYYY-MM-DD
 const getLocalDateStr = () => {
@@ -93,7 +93,6 @@ const Dashboard = () => {
         const checkShiftStatus = async () => {
             if (!user) return;
             
-            // FIXED: Now checks for BOTH employee (Agent) and closer roles
             if (user.role !== 'employee' && user.role !== 'closer') return;
 
             try {
@@ -131,7 +130,6 @@ const Dashboard = () => {
                     const res = await apiClient.get('/api/v1/users/');
                     const allUsers = res.data.data || res.data || [];
 
-                    // Included 'closer' role for full visibility
                     const employeesOnly = allUsers.filter(u => u.role === 'employee' || u.role === 'closer');
                     setStaffList(employeesOnly);
 
@@ -166,7 +164,6 @@ const Dashboard = () => {
     }, [user, isAdminOrSuper]);
 
     // Compute metrics instantly when dates or selected employee change
-    // Compute metrics instantly when dates or selected employee change
     useEffect(() => {
         if (!allCalls) return;
 
@@ -195,7 +192,6 @@ const Dashboard = () => {
             return callArray.reduce((acc, call) => {
                 let multiplier = 0;
                 
-                // Count how many times this specific user appears on this call
                 if (call.employee_id === tUserId) multiplier += 1;
                 if (call.handy_id === tUserId) multiplier += 1;
                 if (call.closer_id === tUserId) multiplier += 1;
@@ -279,7 +275,7 @@ const Dashboard = () => {
         <PageWrapper title="Dashboard">
             <AnnouncementModal />
             <AnnouncementBanner />
-
+            {isAdminOrSuper && <PendingLeaveAlert />}
             {needsToStartShift && createPortal(
                 <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in">
                     <div className="bg-white rounded-3xl shadow-card max-w-sm w-full p-8 text-center border border-prime-border transform transition-all">
@@ -471,9 +467,8 @@ const Dashboard = () => {
                                     <tbody className="divide-y divide-gray-100">
                                         {dailyEmployeeStats.length > 0 ? (
                                             dailyEmployeeStats.map(emp => (
-                                                <tr key={emp.id} className="hover:bg-gray-50/50 transition-colors">
+                                                <tr key={emp.id} className={`transition-colors ${emp.retained > 0 ? 'bg-green-100/50 hover:bg-green-100/80' : 'hover:bg-gray-50/50'}`}>
                                                     
-                                                    {/* INJECTED JOINING DATE BENEATH THE NAME */}
                                                     <td className="p-4 whitespace-nowrap">
                                                         <div className="text-sm font-semibold text-gray-800">{emp.name}</div>
                                                         <div className="text-[10px] font-medium text-gray-400 mt-0.5">Joined: {emp.joiningDate}</div>

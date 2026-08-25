@@ -16,16 +16,12 @@ const AttendanceLogs = () => {
     const [loading, setLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState(null);
 
-    // NEW: Intelligent Date Switching Logic
     useEffect(() => {
         if (selectedEmployee === 'all') {
-            // Force today's date when looking at everyone
             if (!selectedDate) setSelectedDate(getLocalDateStr());
         } else {
-            // Automatically clear the date to show ALL-TIME history for a specific employee
             setSelectedDate('');
         }
-        // We strictly only want this to run when the employee dropdown changes
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedEmployee]);
 
@@ -61,7 +57,6 @@ const AttendanceLogs = () => {
         }
     };
 
-    // Re-fetch data whenever the employee or date changes
     useEffect(() => {
         if (selectedEmployee === 'all' && !selectedDate) return; 
         fetchAttendanceData();
@@ -189,16 +184,65 @@ const AttendanceLogs = () => {
                                     const cOut = log.check_out ? new Date(log.check_out) : null;
                                     const timeObj = calculateTimeSpent(cIn, cOut);
                                     const isCheckedIn = log.status === 'checked_in';
+
+                                    // Dynamic Late Calculation (Check-in rules)
+                                    let isLate = false;
+                                    if (cIn) {
+                                        const dayOfWeek = cIn.getDay(); 
+                                        const hour = cIn.getHours();
+                                        const mins = cIn.getMinutes();
+
+                                        if (dayOfWeek === 5) {
+                                            isLate = (hour > 15 || (hour === 15 && mins > 10));
+                                        } else if (dayOfWeek === 6) {
+                                            isLate = (hour > 14 || (hour === 14 && mins > 10));
+                                        } else {
+                                            isLate = (hour > 13 || (hour === 13 && mins > 10));
+                                        }
+                                    }
+
+                                    // NEW: Dynamic Early Checkout Calculation
+                                    let isEarlyCheckout = false;
+                                    if (cIn && cOut && !isCheckedIn) {
+                                        const dayOfWeek = cIn.getDay();
+                                        const totalMins = timeObj.mins; // calculated in calculateTimeSpent
+
+                                        if (dayOfWeek === 5) {
+                                            // Friday: Required 7 hours (420 mins)
+                                            isEarlyCheckout = totalMins < 420;
+                                        } else if (dayOfWeek === 6) {
+                                            // Saturday: Required 5h 45m (345 mins)
+                                            isEarlyCheckout = totalMins < 345;
+                                        } else {
+                                            // Standard days: Required 9 hours (540 mins)
+                                            isEarlyCheckout = totalMins < 540;
+                                        }
+                                    }
                                     
                                     return (
                                         <tr key={uniqueKey} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
                                             <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-600 font-semibold">{formattedDate}</td>
                                             <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-800 font-bold">{employee.full_name} <span className="text-[10px] text-gray-400 font-normal block capitalize">{employee.role}</span></td>
+                                            
+                                            {/* Apply Late Highlighting to text and add 'Late' badge only */}
                                             <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-500">
-                                                {cIn ? cIn.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'} 
-                                                <span className="mx-2">→</span> 
-                                                {cOut ? cOut.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Active'}
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                    <span className={isLate ? 'text-red-500 font-bold' : ''}>
+                                                        {cIn ? cIn.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'} 
+                                                    </span>
+                                                    {isLate && (
+                                                        <span className="bg-red-100 text-red-600 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Late</span>
+                                                    )}
+                                                    <span className="mx-1 text-gray-300">→</span> 
+                                                    <span className={isEarlyCheckout ? 'text-amber-600 font-bold' : ''}>
+                                                        {cOut ? cOut.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Active'}
+                                                    </span>
+                                                    {isEarlyCheckout && (
+                                                        <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Early Out</span>
+                                                    )}
+                                                </div>
                                             </td>
+
                                             <td className="px-6 py-5 whitespace-nowrap text-sm font-bold text-prime-primary">
                                                 {timeObj.text}
                                             </td>

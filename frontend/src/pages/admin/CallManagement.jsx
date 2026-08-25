@@ -63,7 +63,7 @@ const CallManagement = () => {
     const handleOpenAdd = () => {
         setModalMode('add');
         setFormData({ 
-            client_name: '', employee_id: '', status: 'pending', commission: '',
+            client_name: '', employee_id: '', status: 'retained', commission: '',
             handy_id: '', closer_id: '', doc_sign_id: ''
         });
         setIsModalOpen(true);
@@ -174,7 +174,6 @@ const CallManagement = () => {
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Status</label>
                             <select name="status" value={formData.status} onChange={handleChange} className="input-base cursor-pointer">
-                                <option value="pending">Pending</option>
                                 <option value="retained">Retained</option>
                             </select>
                         </div>
@@ -227,7 +226,7 @@ const CallManagement = () => {
                     >
                         <option value="all">All Statuses</option>
                         <option value="retained">Retained</option>
-                        <option value="pending">Pending</option>
+                        
                         
                     </select>
                     <Button onClick={handleOpenAdd} variant="primary" className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap">

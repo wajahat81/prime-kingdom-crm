@@ -68,7 +68,7 @@ const CallLogUpload = () => {
             
             // Reset form
             setFormData({ 
-                client_name: '', employee_id: '', status: 'pending', commission: '', handy_id: '', closer_id: '', doc_sign_id: ''
+                client_name: '', employee_id: '', status: 'retained', commission: '', handy_id: '', closer_id: '', doc_sign_id: ''
             });
         } catch (error) {
             setStatusMessage({ type: 'error', text: 'Failed to log call.' });

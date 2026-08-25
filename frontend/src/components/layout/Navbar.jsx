@@ -47,8 +47,10 @@ const Navbar = ({ toggleMobileMenu }) => {
     }, []);
 
     // Attendance fetcher
+    // Attendance fetcher & Real-time Event Listener
     useEffect(() => {
         if (!user) return;
+        
         const fetchAttendanceStatus = async () => {
             try {
                 const response = await apiClient.get('/api/v1/attendance/status');
@@ -62,16 +64,44 @@ const Navbar = ({ toggleMobileMenu }) => {
                 console.error('Failed to fetch attendance status', error);
             }
         };
+
+        // Fetch immediately on load
         fetchAttendanceStatus();
+
+        // Listen for the custom "SHIFT_STARTED" event from the Dashboard
+        const handleShiftUpdate = () => {
+            fetchAttendanceStatus();
+        };
+        
+        window.addEventListener('shift-started-event', handleShiftUpdate);
+        
+        // Cleanup listener on unmount
+        return () => window.removeEventListener('shift-started-event', handleShiftUpdate);
     }, [user]);
 
     // Timer logic
+    // Timer logic with 9-Hour Auto-Stop Sync
+    // Timer logic with Auto-Stop and Database Sync
     useEffect(() => {
         let interval;
         if (shiftStatus === 'checked_in' && checkInTime) {
             interval = setInterval(() => {
                 const diff = (new Date() - new Date(checkInTime)) / 1000;
-                setElapsedTime(diff);
+                
+                // 60 for 1-minute test mode (Change to 32400 for 9 hours in production)
+                if (diff >= 32400) {
+                    setElapsedTime(32400); // Lock visual timer
+                    setShiftStatus('checked_out'); // Instantly update UI
+                    setCheckInTime(null);
+                    clearInterval(interval); // Stop the clock
+                    
+                    // NEW: Silently tell the backend to update the database right now!
+                    apiClient.post('/api/v1/attendance/check-out')
+                        .catch(err => console.error("Auto-checkout DB update failed:", err));
+                        
+                } else {
+                    setElapsedTime(diff);
+                }
             }, 1000);
         }
         return () => clearInterval(interval);

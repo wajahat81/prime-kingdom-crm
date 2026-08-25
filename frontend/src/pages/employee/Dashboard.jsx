@@ -113,6 +113,10 @@ const Dashboard = () => {
         try {
             await apiClient.post('/api/v1/attendance/check-in');
             setNeedsToStartShift(false);
+            
+            // FIRE THE CUSTOM EVENT TO WAKE UP THE NAVBAR
+            window.dispatchEvent(new Event('shift-started-event'));
+            
         } catch (err) {
             console.error("Failed to start shift", err);
         } finally {

@@ -8,12 +8,15 @@ const CallLogUpload = () => {
     const [formData, setFormData] = useState({
         client_name: '',
         employee_id: '',
-        status: 'pending',
-        call_duration: '',
-        commission: ''
+        status: 'retained',
+        commission: '',
+        handy_id: '',
+        closer_id: '',
+        doc_sign_id: ''
     });
     
-    const [employees, setEmployees] = useState([]);
+    const [agents, setAgents] = useState([]);
+    const [closers, setClosers] = useState([]);
     const [loadingEmployees, setLoadingEmployees] = useState(true);
     const [statusMessage, setStatusMessage] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -22,18 +25,20 @@ const CallLogUpload = () => {
     useEffect(() => {
         const fetchStaff = async () => {
             try {
-                // Fetch strictly employees (agents) to log calls for
                 const response = await apiClient.get('/api/v1/users/');
                 const data = response.data.data || response.data || [];
                 
-                // ONLY allow 'employee' role
-                const staff = data.filter(u => u.role === 'employee');
+                // Agents can be regular employees or closers
+                setAgents(data.filter(u => u.role === 'employee' || u.role === 'closer'));
                 
-                setEmployees(staff);
+                // Strictly Closers for the new dropdowns
+                setClosers(data.filter(u => u.role === 'closer'));
+                
                 setLoadingEmployees(false);
             } catch (error) {
                 console.error('Failed to fetch staff:', error);
-                setEmployees([]);
+                setAgents([]);
+                setClosers([]);
                 setLoadingEmployees(false);
             }
         };
@@ -55,13 +60,16 @@ const CallLogUpload = () => {
             await apiClient.post('/api/v1/calls/', {
                 ...formData,
                 commission: formData.commission ? parseFloat(formData.commission) : 0,
-                call_duration: formData.call_duration || null
+                handy_id: formData.handy_id || null,
+                closer_id: formData.closer_id || null,
+                doc_sign_id: formData.doc_sign_id || null
             });
             setStatusMessage({ type: 'success', text: 'Call logged successfully.' });
             
-            setFormData(prev => ({ 
-                ...prev, client_name: '', status: 'pending', call_duration: '', commission: ''
-            }));
+            // Reset form
+            setFormData({ 
+                client_name: '', employee_id: '', status: 'pending', commission: '', handy_id: '', closer_id: '', doc_sign_id: ''
+            });
         } catch (error) {
             setStatusMessage({ type: 'error', text: 'Failed to log call.' });
         } finally {
@@ -107,8 +115,8 @@ const CallLogUpload = () => {
                         <div className="md:col-span-2">
                             <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Assigned Agent</label>
                             <select name="employee_id" value={formData.employee_id} onChange={handleChange} required className="input-base cursor-pointer">
-                                <option value="" disabled></option>
-                                {employees.map(emp => (
+                                <option value="" disabled>Select the Agent...</option>
+                                {agents.map(emp => (
                                     <option key={emp.id} value={emp.id}>
                                         {emp.full_name || emp.email} ({emp.role})
                                     </option>
@@ -121,27 +129,47 @@ const CallLogUpload = () => {
                             <input type="text" name="client_name" value={formData.client_name} onChange={handleChange} required minLength={2} className="input-base" />
                         </div>
 
-                        <div>
-                            <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Duration (MM:SS)</label>
-                            <input type="text" name="call_duration" value={formData.call_duration} onChange={handleChange} className="input-base" />
-                        </div>
+                        
 
                         <div>
-                            <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Outcome</label>
-                            <select name="status" value={formData.status} onChange={handleChange} className="input-base cursor-pointer">
-                                <option value="pending">Pending</option>
-                                <option value="retained">Retained</option>
-                            </select>
-                        </div>
-
-                        <div className="md:col-span-2">
-                            <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Commission ($)</label>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Commission (Rs)</label>
                             <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} className="input-base" />
+                        </div>
+
+                        {/* NEW SPLIT FIELDS */}
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-primary uppercase tracking-wider mb-2 ml-2">Handy</label>
+                                <select name="handy_id" value={formData.handy_id} onChange={handleChange} className="input-base cursor-pointer bg-blue-50/50">
+                                    <option value="">None</option>
+                                    {closers.map(emp => (
+                                        <option key={emp.id} value={emp.id}>{emp.full_name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-primary uppercase tracking-wider mb-2 ml-2">Closer</label>
+                                <select name="closer_id" value={formData.closer_id} onChange={handleChange} className="input-base cursor-pointer bg-blue-50/50">
+                                    <option value="">None</option>
+                                    {closers.map(emp => (
+                                        <option key={emp.id} value={emp.id}>{emp.full_name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-primary uppercase tracking-wider mb-2 ml-2">Doc Sign</label>
+                                <select name="doc_sign_id" value={formData.doc_sign_id} onChange={handleChange} className="input-base cursor-pointer bg-blue-50/50">
+                                    <option value="">None</option>
+                                    {closers.map(emp => (
+                                        <option key={emp.id} value={emp.id}>{emp.full_name}</option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                     </div>
 
                     <div className="pt-6 mt-2">
-                        <Button type="submit" disabled={isSubmitting || employees.length === 0} variant="primary" className="w-full py-3">
+                        <Button type="submit" disabled={isSubmitting || agents.length === 0} variant="primary" className="w-full py-3">
                             {isSubmitting ? 'Saving...' : 'Save Call Log'}
                         </Button>
                     </div>

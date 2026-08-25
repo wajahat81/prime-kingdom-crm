@@ -26,6 +26,10 @@ const CallTable = ({ calls }) => {
                             <th scope="col" className="px-8 py-6 text-left text-[13px] font-semibold text-prime-muted tracking-wide">
                                 Status
                             </th>
+                            {/* NEW COMMISSION COLUMN */}
+                            <th scope="col" className="px-8 py-6 text-left text-[13px] font-semibold text-prime-muted tracking-wide">
+                                Commission
+                            </th>
                         </tr>
                     </thead>
                     <tbody className="bg-white">
@@ -39,6 +43,12 @@ const CallTable = ({ calls }) => {
                                 </td>
                                 <td className="px-8 py-5 whitespace-nowrap">
                                     <CallStatusBadge status={call.status} />
+                                </td>
+                                {/* NEW COMMISSION DATA */}
+                                <td className="px-8 py-5 whitespace-nowrap">
+                                    <div className="text-sm font-bold text-gray-700">
+                                        {call.status === 'retained' ? `Rs. ${parseFloat(call.commission || 0).toFixed(2)}` : '-'}
+                                    </div>
                                 </td>
                             </tr>
                         ))}

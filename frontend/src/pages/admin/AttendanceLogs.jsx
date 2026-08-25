@@ -16,12 +16,24 @@ const AttendanceLogs = () => {
     const [loading, setLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState(null);
 
+    // NEW: Intelligent Date Switching Logic
+    useEffect(() => {
+        if (selectedEmployee === 'all') {
+            // Force today's date when looking at everyone
+            if (!selectedDate) setSelectedDate(getLocalDateStr());
+        } else {
+            // Automatically clear the date to show ALL-TIME history for a specific employee
+            setSelectedDate('');
+        }
+        // We strictly only want this to run when the employee dropdown changes
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedEmployee]);
+
     useEffect(() => {
         const fetchUsers = async () => {
             try {
                 const response = await apiClient.get('/api/v1/users/');
                 const allUsers = response.data.data || response.data || [];
-                // Filter out admins so we only track agents and closers
                 setEmployees(allUsers.filter(u => u.role === 'employee' || u.role === 'closer'));
             } catch (error) {
                 console.error('Failed to fetch users:', error);
@@ -30,12 +42,18 @@ const AttendanceLogs = () => {
         fetchUsers();
     }, []);
 
-    const fetchDailyData = async () => {
+    const fetchAttendanceData = async () => {
         setLoading(true);
         setStatusMessage(null);
         try {
-            const response = await apiClient.get(`/api/v1/attendance/date/${selectedDate}`);
-            setAttendanceLogs(response.data.data || []);
+            if (selectedEmployee === 'all') {
+                const targetDate = selectedDate || getLocalDateStr();
+                const response = await apiClient.get(`/api/v1/attendance/date/${targetDate}`);
+                setAttendanceLogs(response.data.data || []);
+            } else {
+                const response = await apiClient.get(`/api/v1/attendance/history/${selectedEmployee}`);
+                setAttendanceLogs(response.data.data || []);
+            }
         } catch (error) {
             setAttendanceLogs([]);
         } finally {
@@ -43,16 +61,19 @@ const AttendanceLogs = () => {
         }
     };
 
+    // Re-fetch data whenever the employee or date changes
     useEffect(() => {
-        if (selectedDate) fetchDailyData();
-    }, [selectedDate]);
+        if (selectedEmployee === 'all' && !selectedDate) return; 
+        fetchAttendanceData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedEmployee, selectedDate]);
 
     const handleDirectStatusUpdate = async (logId, actionType) => {
         setStatusMessage(null);
         try {
             await apiClient.put(`/api/v1/attendance/${logId}/status`, { status: actionType });
             setStatusMessage({ type: 'success', text: `Timesheet securely ${actionType}.` });
-            fetchDailyData(); 
+            fetchAttendanceData(); 
         } catch (error) {
             setStatusMessage({ type: 'error', text: `Failed to ${actionType} attendance record.` });
         }
@@ -67,10 +88,23 @@ const AttendanceLogs = () => {
         return { text: `${hrs}h ${mins}m`, mins: diffMins };
     };
 
-    const displayData = employees.map(emp => {
-        const log = attendanceLogs.find(l => l.employee_id === emp.id);
-        return { employee: emp, log: log || null };
-    }).filter(data => selectedEmployee === 'all' || data.employee.id === selectedEmployee);
+    let displayData = [];
+    if (selectedEmployee === 'all') {
+        const targetDate = selectedDate || getLocalDateStr();
+        displayData = employees.map(emp => {
+            const log = attendanceLogs.find(l => l.employee_id === emp.id);
+            return { uniqueKey: emp.id, employee: emp, log: log || null, recordDate: targetDate };
+        });
+    } else {
+        const emp = employees.find(e => e.id === selectedEmployee);
+        const filteredLogs = selectedDate ? attendanceLogs.filter(l => l.date === selectedDate) : attendanceLogs;
+        
+        if (selectedDate && filteredLogs.length === 0) {
+            displayData = [{ uniqueKey: 'empty', employee: emp, log: null, recordDate: selectedDate }];
+        } else {
+            displayData = filteredLogs.map(log => ({ uniqueKey: log.id, employee: emp, log: log, recordDate: log.date }));
+        }
+    }
 
     return (
         <PageWrapper title="Attendance Auditing">
@@ -84,8 +118,8 @@ const AttendanceLogs = () => {
                 </div>
             )}
 
-            <div className="card-base p-6 mb-8 bg-white flex flex-wrap items-center gap-4">
-                <div className="flex-1 min-w-[200px]">
+            <div className="card-base p-6 mb-8 bg-white flex flex-col md:flex-row items-center gap-6">
+                <div className="flex-1 w-full min-w-[200px]">
                     <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Employee Filter</label>
                     <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="input-base cursor-pointer">
                         <option value="all">All Employees</option>
@@ -94,13 +128,20 @@ const AttendanceLogs = () => {
                         ))}
                     </select>
                 </div>
-                <div className="w-full sm:w-auto">
-                    <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Date Filter</label>
+                <div className="w-full md:w-auto">
+                    <div className="flex items-center justify-between mb-2 ml-2">
+                        <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider">Date Filter</label>
+                        {selectedEmployee !== 'all' && selectedDate && (
+                            <button onClick={() => setSelectedDate('')} className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-wider">
+                                Clear Date
+                            </button>
+                        )}
+                    </div>
                     <input 
                         type="date" 
                         value={selectedDate} 
                         onChange={(e) => setSelectedDate(e.target.value)} 
-                        className="input-base shadow-sm !w-full sm:!w-fit font-semibold cursor-pointer" 
+                        className="input-base shadow-sm !w-full md:!w-fit font-semibold cursor-pointer" 
                     />
                 </div>
             </div>
@@ -110,6 +151,7 @@ const AttendanceLogs = () => {
                     <table className="min-w-full">
                         <thead>
                             <tr className="border-b border-gray-100">
+                                <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Date</th>
                                 <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Employee</th>
                                 <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Check In / Out</th>
                                 <th className="px-6 py-6 text-left text-[13px] font-bold text-gray-400">Total Time</th>
@@ -119,14 +161,19 @@ const AttendanceLogs = () => {
                         </thead>
                         <tbody className="bg-white">
                             {loading ? (
-                                <tr><td colSpan="5" className="px-8 py-20 text-center text-prime-muted text-sm">Querying database...</td></tr>
+                                <tr><td colSpan="6" className="px-8 py-20 text-center text-prime-muted text-sm">Querying database...</td></tr>
                             ) : displayData.length === 0 ? (
-                                <tr><td colSpan="5" className="px-8 py-32 text-center text-prime-primary/60 text-sm font-medium">No records found.</td></tr>
+                                <tr><td colSpan="6" className="px-8 py-32 text-center text-prime-primary/60 text-sm font-medium">No records found.</td></tr>
                             ) : (
-                                displayData.map(({ employee, log }) => {
+                                displayData.map(({ uniqueKey, employee, log, recordDate }) => {
+                                    
+                                    const displayDateObj = recordDate ? new Date(recordDate) : new Date();
+                                    const formattedDate = displayDateObj.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+
                                     if (!log) {
                                         return (
-                                            <tr key={employee.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors bg-red-50/30">
+                                            <tr key={uniqueKey} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors bg-red-50/30">
+                                                <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-600 font-semibold">{formattedDate}</td>
                                                 <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-800 font-bold">{employee.full_name} <span className="text-[10px] text-gray-400 font-normal block capitalize">{employee.role}</span></td>
                                                 <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-400">-</td>
                                                 <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-400">-</td>
@@ -144,7 +191,8 @@ const AttendanceLogs = () => {
                                     const isCheckedIn = log.status === 'checked_in';
                                     
                                     return (
-                                        <tr key={log.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
+                                        <tr key={uniqueKey} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
+                                            <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-600 font-semibold">{formattedDate}</td>
                                             <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-800 font-bold">{employee.full_name} <span className="text-[10px] text-gray-400 font-normal block capitalize">{employee.role}</span></td>
                                             <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-500">
                                                 {cIn ? cIn.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '-'} 

@@ -8,11 +8,19 @@ from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
 
+# --- STRICT PAKISTAN TIMEZONE (UTC+5) ---
+PKT = timezone(timedelta(hours=5))
+
+def get_pkt_today():
+    """Always returns the exact current date in Lahore, Pakistan"""
+    return datetime.now(PKT).date().isoformat()
+
 @router.post("/check-in")
 async def check_in(current_user: dict = Depends(get_current_active_user)):
     """Employee checks in (Strictly ONCE per day)."""
     try:
-        today = datetime.now(timezone.utc).date().isoformat()
+        # FIXED: Now strictly evaluates the day using PKT
+        today = get_pkt_today() 
         
         check_response = supabase.table('attendance').select('*') \
             .eq('employee_id', current_user['id']) \
@@ -52,7 +60,8 @@ async def check_in(current_user: dict = Depends(get_current_active_user)):
 async def check_out(current_user: dict = Depends(get_current_active_user)):
     """Employee auto checks out."""
     try:
-        today = datetime.now(timezone.utc).date().isoformat()
+        # FIXED: Now strictly evaluates the day using PKT
+        today = get_pkt_today()
         
         response = supabase.table('attendance').select('*') \
             .eq('employee_id', current_user['id']) \
@@ -89,7 +98,9 @@ async def check_out(current_user: dict = Depends(get_current_active_user)):
 async def get_attendance_status(current_user: dict = Depends(get_current_active_user)):
     """Get today's exact shift status with auto-checkout enforcement."""
     try:
-        today = datetime.now(timezone.utc).date().isoformat()
+        # FIXED: Now strictly evaluates the day using PKT
+        today = get_pkt_today()
+        current_time = datetime.now(timezone.utc)
         
         response = supabase.table('attendance').select('*') \
             .eq('employee_id', current_user['id']) \
@@ -104,7 +115,6 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
             # --- 9-HOUR AUTO-CHECKOUT LOGIC ---
             if record.get('status') == 'checked_in' and record.get('check_in'):
                 check_in_time = datetime.fromisoformat(record['check_in'].replace('Z', '+00:00'))
-                current_time = datetime.now(timezone.utc)
                 
                 if current_time - check_in_time >= timedelta(minutes=540):
                     auto_check_out_time = (check_in_time + timedelta(minutes=540)).isoformat()
@@ -118,16 +128,22 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
                     return {
                         "status": "checked_out",
                         "check_in_time": record['check_in'],
-                        "check_out_time": auto_check_out_time
+                        "check_out_time": auto_check_out_time,
+                        "server_time": current_time.isoformat() # ADDED: Required for frontend clock sync
                     }
             # -----------------------------------
 
             return {
                 "status": record.get('status', 'checked_out'),
                 "check_in_time": record.get('check_in'),
-                "check_out_time": record.get('check_out')
+                "check_out_time": record.get('check_out'),
+                "server_time": current_time.isoformat() # ADDED: Required for frontend clock sync
             }
-        return {"status": "not_checked_in"}
+            
+        return {
+            "status": "not_checked_in",
+            "server_time": current_time.isoformat() # ADDED: Required for frontend clock sync
+        }
     except Exception as e:
         print(f"Get status error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -214,8 +230,6 @@ async def get_attendance_by_date(
 ):
     """Fetch all attendance records for a specific YYYY-MM-DD date."""
     try:
-        # FIX: Query the explicit 'date' column instead of the check_in timestamp.
-        # This guarantees it matches the exact day regardless of when the timestamp was generated!
         response = supabase.table('attendance') \
             .select('*') \
             .eq('date', target_date) \

@@ -1,23 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import List, Optional
-from pydantic import BaseModel # New Import
+from pydantic import BaseModel 
 from app.core.permissions import get_current_active_user, require_role
 from app.db.session import supabase
 import logging
-import uuid # New Import
+import uuid 
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 # --- Simplified Internal Schema for Updates ---
-# We use this internally in the PUT method so we don't need the schema file.
 class FullCallUpdate(BaseModel):
     client_name: str
     employee_id: str
-    call_duration: Optional[str] = None
     status: str
     commission: Optional[float] = 0.0
+    handy_id: Optional[str] = None
+    closer_id: Optional[str] = None
+    doc_sign_id: Optional[str] = None
 
 @router.post("/", status_code=201)
 async def upload_call_log(
@@ -30,10 +31,12 @@ async def upload_call_log(
             "id": str(uuid.uuid4()),
             "client_name": call_in.get("client_name"),
             "employee_id": call_in.get("employee_id"),
-            "call_duration": call_in.get("call_duration"),
             "status": call_in.get("status", "pending"),
             "commission": float(call_in.get("commission", 0.0) or 0.0),
-            "created_by": current_user["id"] # Explicitly mapping to your foreign key column
+            "handy_id": call_in.get("handy_id"),
+            "closer_id": call_in.get("closer_id"),
+            "doc_sign_id": call_in.get("doc_sign_id"),
+            "created_by": current_user["id"] 
         }
         
         response = supabase.table('calls').insert(new_record).execute()
@@ -49,15 +52,15 @@ async def upload_call_log(
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/me")
-async def read_my_calls(current_user: dict = Depends(get_current_active_user)):
-    """Employee gets their own calls."""
+async def get_my_calls(current_user: dict = Depends(get_current_active_user)):
     try:
-        response = supabase.table('calls').select('*') \
-            .eq('employee_id', current_user['id']) \
-            .order('created_at', desc=True).execute()
-        return {"data": response.data}
+        user_id = current_user['id']
+        # Fetch calls where the user is the agent OR selected as any closer[cite: 11]
+        query = f"employee_id.eq.{user_id},handy_id.eq.{user_id},closer_id.eq.{user_id},doc_sign_id.eq.{user_id}"
+        
+        response = supabase.table('calls').select('*').or_(query).order('created_at', desc=True).execute()
+        return {"data": response.data or []}
     except Exception as e:
-        logger.error(f"Get my calls error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/")
@@ -66,7 +69,6 @@ async def get_all_calls_endpoint(
 ):
     """Admin gets all call logs, including employee names."""
     try:
-        # Fetch calls joined with profiles in ONE query to be efficient
         response = supabase.table('calls') \
             .select('*, profiles!calls_employee_id_fkey(full_name)') \
             .order('created_at', desc=True).execute()
@@ -77,21 +79,16 @@ async def get_all_calls_endpoint(
         logger.error(f"Get all calls error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================
-# NEW FULL CRUD ENDPOINTS FOR ADMIN MANAGEMENT
-# ============================================
-
 @router.put("/{call_id}")
 async def full_edit_call_log(
     call_id: str,
-    call_update: FullCallUpdate, # Validate the full update payload
+    call_update: FullCallUpdate, 
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     """Admin edits all details of a call log."""
     try:
         update_dict = call_update.dict()
         
-        # Security Check: Force commission to 0 if status isn't retained
         if update_dict['status'] != 'retained':
             update_dict['commission'] = 0.0
             
@@ -111,7 +108,6 @@ async def full_edit_call_log(
 @router.delete("/{call_id}")
 async def delete_call_log(
     call_id: str,
-    # Changed this line to allow both admins and super_admins
     current_user: dict = Depends(require_role(["admin", "super_admin"])) 
 ):
     """Admin permanently deletes a call log."""

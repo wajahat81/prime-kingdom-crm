@@ -6,7 +6,11 @@ import PageWrapper from '../../components/layout/PageWrapper';
 
 const CallManagement = () => {
     const [calls, setCalls] = useState([]);
-    const [users, setUsers] = useState([]);
+    
+    // Separated user lists for dropdowns
+    const [agents, setAgents] = useState([]);
+    const [closers, setClosers] = useState([]);
+    
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
@@ -21,7 +25,8 @@ const CallManagement = () => {
     const [confirmDeleteDialog, setConfirmDeleteDialog] = useState({ isOpen: false, callId: null });
 
     const [formData, setFormData] = useState({
-        client_name: '', employee_id: '', call_duration: '', status: 'pending', commission: ''
+        client_name: '', employee_id: '', status: 'retained', commission: '',
+        handy_id: '', closer_id: '', doc_sign_id: ''
     });
 
     const fetchCallsAndUsers = async () => {
@@ -33,8 +38,13 @@ const CallManagement = () => {
             ]);
             setCalls(callsRes.data.data || []);
             
-            const staff = (usersRes.data.data || usersRes.data || []).filter(u => u.role === 'employee');
-            setUsers(staff);
+            const staff = (usersRes.data.data || usersRes.data || []);
+            
+            // Agents can be employees or closers
+            setAgents(staff.filter(u => u.role === 'employee' || u.role === 'closer'));
+            // Support roles are strictly closers
+            setClosers(staff.filter(u => u.role === 'closer'));
+            
             setError(null);
         } catch (err) {
             setError('Failed to load data.');
@@ -52,7 +62,10 @@ const CallManagement = () => {
 
     const handleOpenAdd = () => {
         setModalMode('add');
-        setFormData({ client_name: '', employee_id: '', call_duration: '', status: 'pending', commission: '' });
+        setFormData({ 
+            client_name: '', employee_id: '', status: 'pending', commission: '',
+            handy_id: '', closer_id: '', doc_sign_id: ''
+        });
         setIsModalOpen(true);
     };
 
@@ -62,9 +75,11 @@ const CallManagement = () => {
         setFormData({
             client_name: call.client_name,
             employee_id: call.employee_id || '',
-            call_duration: call.call_duration || '',
             status: call.status,
-            commission: call.commission || ''
+            commission: call.commission || '',
+            handy_id: call.handy_id || '',
+            closer_id: call.closer_id || '',
+            doc_sign_id: call.doc_sign_id || ''
         });
         setIsModalOpen(true);
     };
@@ -76,7 +91,10 @@ const CallManagement = () => {
         try {
             const payload = {
                 ...formData,
-                commission: formData.status === 'retained' ? (parseFloat(formData.commission) || 0) : 0
+                commission: formData.status === 'retained' ? (parseFloat(formData.commission) || 0) : 0,
+                handy_id: formData.handy_id || null,
+                closer_id: formData.closer_id || null,
+                doc_sign_id: formData.doc_sign_id || null
             };
 
             if (modalMode === 'add') {
@@ -110,6 +128,13 @@ const CallManagement = () => {
         return call.employee_id ? call.employee_id.substring(0, 8) + '...' : 'Unknown';
     };
 
+    // Helper to translate Support IDs into names for the table
+    const getCloserName = (id) => {
+        if (!id) return null;
+        const found = closers.find(c => c.id === id);
+        return found ? (found.full_name || found.email) : 'Unknown';
+    };
+
     return (
         <PageWrapper title="Call Logs">
             {/* Delete Confirmation Modal */}
@@ -132,35 +157,58 @@ const CallManagement = () => {
                 confirmText={isSubmitting ? "Saving..." : "Save"}
             >
                 <div className="space-y-4 py-2">
-                    <div>
-                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Agent</label>
-                        <select name="employee_id" value={formData.employee_id} onChange={handleChange} required className="input-base">
-                            <option value="">Select Agent...</option>
-                            {users.map(u => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Client Name</label>
-                        <input type="text" name="client_name" value={formData.client_name} onChange={handleChange} required className="input-base" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Duration</label>
-                        <input type="text" name="call_duration" value={formData.call_duration} onChange={handleChange} placeholder="MM:SS" className="input-base" />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Status</label>
-                        <select name="status" value={formData.status} onChange={handleChange} className="input-base">
-                            <option value="pending">Pending</option>
-                            <option value="retained">Retained</option>
-                            
-                        </select>
-                    </div>
-                    {formData.status === 'retained' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Agent</label>
+                            <select name="employee_id" value={formData.employee_id} onChange={handleChange} required className="input-base cursor-pointer">
+                                <option value="">Select Agent...</option>
+                                {agents.map(u => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
+                            </select>
+                        </div>
+                        
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Client Name</label>
+                            <input type="text" name="client_name" value={formData.client_name} onChange={handleChange} required className="input-base" />
+                        </div>
+                        
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Status</label>
+                            <select name="status" value={formData.status} onChange={handleChange} className="input-base cursor-pointer">
+                                <option value="pending">Pending</option>
+                                <option value="retained">Retained</option>
+                            </select>
+                        </div>
+                        
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Commission (Rs. )</label>
-                            <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} className="input-base" />
+                            <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} disabled={formData.status !== 'retained'} className="input-base disabled:opacity-50" />
                         </div>
-                    )}
+
+                        {/* NEW SPLIT FIELDS */}
+                        <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
+                            <div>
+                                <label className="block text-[10px] font-bold text-prime-primary uppercase mb-1">Handy</label>
+                                <select name="handy_id" value={formData.handy_id} onChange={handleChange} className="input-base text-xs py-2 px-2 cursor-pointer bg-blue-50/50">
+                                    <option value="">None</option>
+                                    {closers.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-prime-primary uppercase mb-1">Closer</label>
+                                <select name="closer_id" value={formData.closer_id} onChange={handleChange} className="input-base text-xs py-2 px-2 cursor-pointer bg-blue-50/50">
+                                    <option value="">None</option>
+                                    {closers.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-prime-primary uppercase mb-1">Doc Sign</label>
+                                <select name="doc_sign_id" value={formData.doc_sign_id} onChange={handleChange} className="input-base text-xs py-2 px-2 cursor-pointer bg-blue-50/50">
+                                    <option value="">None</option>
+                                    {closers.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name}</option>)}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </Modal>
 
@@ -199,7 +247,7 @@ const CallManagement = () => {
                             <tr className="border-b border-gray-100">
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Client</th>
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Agent</th>
-                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Duration</th>
+                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Support Team</th>
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Status</th>
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Commission</th>
                                 <th className="px-4 md:px-6 py-6 text-right text-[13px] font-bold text-gray-400">Actions</th>
@@ -215,7 +263,17 @@ const CallManagement = () => {
                                     <tr key={call.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
-                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{call.call_duration || '-'}</td>
+                                        
+                                        {/* NEW: Displays the attached closers */}
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap">
+                                            <div className="flex flex-col gap-1 text-[11px] font-medium text-gray-500">
+                                                {call.handy_id && <span><b className="text-prime-primary mr-1">H:</b> {getCloserName(call.handy_id)}</span>}
+                                                {call.closer_id && <span><b className="text-prime-primary mr-1">C:</b> {getCloserName(call.closer_id)}</span>}
+                                                {call.doc_sign_id && <span><b className="text-prime-primary mr-1">DS:</b> {getCloserName(call.doc_sign_id)}</span>}
+                                                {!call.handy_id && !call.closer_id && !call.doc_sign_id && <span className="text-gray-300">-</span>}
+                                            </div>
+                                        </td>
+
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap">
                                             <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${call.status === 'retained' ? 'bg-green-50 text-green-600' : call.status === 'not_retained' ? 'bg-red-50 text-red-600' : 'bg-yellow-50 text-yellow-600'}`}>
                                                 {call.status.replace('_', ' ')}

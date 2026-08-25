@@ -166,13 +166,12 @@ const Dashboard = () => {
     }, [user, isAdminOrSuper]);
 
     // Compute metrics instantly when dates or selected employee change
+    // Compute metrics instantly when dates or selected employee change
     useEffect(() => {
         if (!allCalls) return;
 
-        let targetCalls = allCalls;
-        if (isAdminOrSuper && selectedEmployeeId) {
-            targetCalls = allCalls.filter(c => c.employee_id === selectedEmployeeId);
-        }
+        // Determine whose stats we are calculating
+        const targetUserId = (isAdminOrSuper && selectedEmployeeId) ? selectedEmployeeId : user?.id;
 
         // Daily Time Boundaries
         const [year, month, day] = selectedDate.split('-');
@@ -182,92 +181,77 @@ const Dashboard = () => {
         // Weekly Time Boundaries
         const { startOfWeek, endOfWeek } = parseWeek(selectedWeek);
 
-        let totalComm = 0, weeklyComm = 0, dailyComm = 0;
-
         // All-Time (with Month Filter)
-        let filteredAllCalls = targetCalls;
+        let filteredAllCalls = allCalls;
         if (allTimeFilter !== 'all') {
             const monthsToSubtract = parseInt(allTimeFilter);
             const cutoffDate = new Date();
             cutoffDate.setMonth(cutoffDate.getMonth() - monthsToSubtract);
-            filteredAllCalls = targetCalls.filter(c => new Date(c.created_at) >= cutoffDate);
+            filteredAllCalls = allCalls.filter(c => new Date(c.created_at) >= cutoffDate);
         }
 
-        const calcAll = filteredAllCalls.reduce((acc, call) => {
-            if (call.status === 'retained') {
-                acc.retained += 1;
-                totalComm += (call.commission || 0);
-            }
-            if (call.status === 'pending') acc.pending += 1;
-            return acc;
-        }, { retained: 0, pending: 0 });
+        // Helper function for dynamic math (Multiplies commission based on appearances)
+        const calculateDynamicStats = (callArray, tUserId) => {
+            return callArray.reduce((acc, call) => {
+                let multiplier = 0;
+                
+                // Count how many times this specific user appears on this call
+                if (call.employee_id === tUserId) multiplier += 1;
+                if (call.handy_id === tUserId) multiplier += 1;
+                if (call.closer_id === tUserId) multiplier += 1;
+                if (call.doc_sign_id === tUserId) multiplier += 1;
+
+                if (multiplier > 0) {
+                    if (call.status === 'retained') {
+                        acc.retained += 1;
+                        acc.commission += (call.commission || 0) * multiplier;
+                    }
+                    if (call.status === 'pending') acc.pending += 1;
+                }
+                return acc;
+            }, { retained: 0, pending: 0, commission: 0 });
+        };
+
+        // All-Time
+        const allStats = calculateDynamicStats(filteredAllCalls, targetUserId);
+        setMetrics({ retained: allStats.retained, pending: allStats.pending });
 
         // Weekly
-        const weekCalls = targetCalls.filter(call => {
+        const weekCalls = allCalls.filter(call => {
             const callDate = new Date(call.created_at);
             return callDate >= startOfWeek && callDate <= endOfWeek;
         });
-        const calcWeek = weekCalls.reduce((acc, call) => {
-            if (call.status === 'retained') {
-                acc.retained += 1;
-                weeklyComm += (call.commission || 0);
-            }
-            if (call.status === 'pending') acc.pending += 1;
-            return acc;
-        }, { retained: 0, pending: 0 });
+        const weekStats = calculateDynamicStats(weekCalls, targetUserId);
+        setWeeklyMetrics({ retained: weekStats.retained, pending: weekStats.pending });
 
         // Daily
-        const dayCalls = targetCalls.filter(call => {
+        const dayCalls = allCalls.filter(call => {
             const callDate = new Date(call.created_at);
             return callDate >= targetDayStart && callDate <= targetDayEnd;
         });
-        const calcDay = dayCalls.reduce((acc, call) => {
-            if (call.status === 'retained') {
-                acc.retained += 1;
-                dailyComm += (call.commission || 0);
-            }
-            if (call.status === 'pending') acc.pending += 1;
-            return acc;
-        }, { retained: 0, pending: 0 });
+        const dayStats = calculateDynamicStats(dayCalls, targetUserId);
+        setDailyMetrics({ retained: dayStats.retained, pending: dayStats.pending });
 
-        setMetrics(calcAll);
-        setWeeklyMetrics(calcWeek);
-        setDailyMetrics(calcDay);
-        setCommission({ total: totalComm, weekly: weeklyComm, daily: dailyComm });
+        // Set the distributed totals
+        setCommission({ total: allStats.commission, weekly: weekStats.commission, daily: dayStats.commission });
 
-        // Admin Table: Calculate ALL agents for the selected DATE
+        // Admin Table: Calculate ALL agents for the selected DATE dynamically
         if (isAdminOrSuper && staffList.length > 0) {
-            const allDayCalls = allCalls.filter(call => {
-                const callDate = new Date(call.created_at);
-                return callDate >= targetDayStart && callDate <= targetDayEnd;
-            });
-
             const tableData = staffList.map(emp => {
-                const empCalls = allDayCalls.filter(c => c.employee_id === emp.id);
-                let empRetained = 0, empPending = 0, empComm = 0;
-
-                empCalls.forEach(call => {
-                    if (call.status === 'retained') {
-                        empRetained += 1;
-                        empComm += (call.commission || 0);
-                    }
-                    if (call.status === 'pending') empPending += 1;
-                });
-
+                const empDayStats = calculateDynamicStats(dayCalls, emp.id);
                 return {
                     id: emp.id,
                     name: emp.full_name || emp.email,
                     dialingId: emp.dialing_id || 'N/A',
-                    joiningDate: emp.joining_date || 'N/A', // Pulled into the table data mapping
-                    retained: empRetained,
-                    pending: empPending,
-                    commission: empComm
+                    joiningDate: emp.joining_date || 'N/A', 
+                    retained: empDayStats.retained,
+                    pending: empDayStats.pending,
+                    commission: empDayStats.commission
                 };
             });
-
             setDailyEmployeeStats(tableData);
         }
-    }, [allCalls, selectedEmployeeId, selectedDate, selectedWeek, isAdminOrSuper, staffList]);
+    }, [allCalls, selectedEmployeeId, selectedDate, selectedWeek, isAdminOrSuper, staffList, user?.id, allTimeFilter]);
 
     const handleNextEmployee = () => {
         if (!staffList.length) return;
@@ -405,10 +389,7 @@ const Dashboard = () => {
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
                         <p className="text-4xl font-bold text-emerald-500">{dailyMetrics.retained}</p>
                     </div>
-                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
-                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Pending Review</h3>
-                        <p className="text-4xl font-bold text-yellow-500">{dailyMetrics.pending}</p>
-                    </div>
+                    
                 </div>
 
                 {/* WEEKLY STATS */}

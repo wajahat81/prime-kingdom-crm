@@ -1,9 +1,10 @@
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded # Added to catch the error
 from slowapi.util import get_remote_address
 from app.api.v1 import auth, calls, attendance, announcements, users, leaves
-from app.limiter import limiter  # Use this imported limiter
+from app.limiter import limiter  
 import os
 
 # Check if we are in production (default to 'development' if not set)
@@ -17,11 +18,29 @@ app = FastAPI(
     openapi_url=None if ENVIRONMENT == "production" else "/openapi.json"
 )
 
+# --- STRICT RATE LIMITING CONNECTION ---
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS configuration
+# --- CONDITIONAL CORS CONFIGURATION ---
+if ENVIRONMENT == "production":
+    # Strictly lock down to your actual domains in production
+    allowed_origins = [
+        "https://primekingdom.org", 
+        "https://api.primekingdom.org"
+    ]
+else:
+    # Allow local testing environments
+    allowed_origins = [
+        "http://localhost:5173", 
+        "http://127.0.0.1:5173", 
+        "http://localhost:8000",
+        "http://192.168.18.76:5173"
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:8000","http://192.168.18.76:5173", "https://primekingdom.org", "https://api.primekingdom.org"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

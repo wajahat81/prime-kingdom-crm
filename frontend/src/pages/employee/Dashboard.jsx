@@ -4,17 +4,16 @@ import AnnouncementBanner from '../../components/layout/AnnouncementBanner';
 import AnnouncementModal from '../../components/layout/AnnouncementModal';
 import PageWrapper from '../../components/layout/PageWrapper';
 import PendingLeaveAlert from '../../components/layout/PendingLeaveAlert';
-
 import { useAuth } from '../../context/AuthContext';
 import { createPortal } from 'react-dom';
+import { supabase } from '../../services/supabaseClient';
 
-// Helper to get local date string YYYY-MM-DD
+// --- HELPER FUNCTIONS ---
 const getLocalDateStr = () => {
     const tzoffset = (new Date()).getTimezoneOffset() * 60000;
     return (new Date(Date.now() - tzoffset)).toISOString().split('T')[0];
 };
 
-// Helper to get current ISO week string YYYY-Www
 const getCurrentWeekStr = () => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -24,7 +23,6 @@ const getCurrentWeekStr = () => {
     return `${d.getFullYear()}-W${weekNo.toString().padStart(2, '0')}`;
 };
 
-// Helper to parse YYYY-Www into Sunday-Saturday range
 const parseWeek = (weekStr) => {
     if (!weekStr) {
         const now = new Date();
@@ -47,7 +45,6 @@ const parseWeek = (weekStr) => {
         ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
     }
 
-    // Shift from ISO Monday start to Sunday start
     const startOfWeek = new Date(ISOweekStart);
     startOfWeek.setDate(startOfWeek.getDate() - 1);
     startOfWeek.setHours(0, 0, 0, 0);
@@ -88,11 +85,9 @@ const Dashboard = () => {
 
     const [allTimeFilter, setAllTimeFilter] = useState('all');
 
-
     useEffect(() => {
         const checkShiftStatus = async () => {
             if (!user) return;
-            
             if (user.role !== 'employee' && user.role !== 'closer') return;
 
             try {
@@ -112,10 +107,7 @@ const Dashboard = () => {
         try {
             await apiClient.post('/api/v1/attendance/check-in');
             setNeedsToStartShift(false);
-            
-            // FIRE THE CUSTOM EVENT TO WAKE UP THE NAVBAR
             window.dispatchEvent(new Event('shift-started-event'));
-            
         } catch (err) {
             console.error("Failed to start shift", err);
         } finally {
@@ -129,8 +121,11 @@ const Dashboard = () => {
                 try {
                     const res = await apiClient.get('/api/v1/users/');
                     const allUsers = res.data.data || res.data || [];
-
                     const employeesOnly = allUsers.filter(u => u.role === 'employee' || u.role === 'closer');
+                    
+                    // Sort staff list alphabetically by full name/email as well
+                    employeesOnly.sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
+                    
                     setStaffList(employeesOnly);
 
                     if (employeesOnly.length > 0) {
@@ -144,7 +139,7 @@ const Dashboard = () => {
         }
     }, [isAdminOrSuper]);
 
-    // Fetch all calls ONCE
+    // Fetch all calls AND attach Real-time Supabase Listener
     useEffect(() => {
         const fetchAllCalls = async () => {
             if (!user) return;
@@ -160,25 +155,52 @@ const Dashboard = () => {
                 setLoading(false);
             }
         };
+
         fetchAllCalls();
+
+        const dashboardCallsChannel = supabase
+            .channel('dashboard-calls-live')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'calls' },
+                (payload) => {
+                    console.log('Dashboard live call update received:', payload);
+
+                    setAllCalls((prevCalls) => {
+                        if (payload.eventType === 'INSERT') {
+                            return [payload.new, ...prevCalls];
+                        } 
+                        else if (payload.eventType === 'UPDATE') {
+                            return prevCalls.map((call) => 
+                                call.id === payload.new.id ? payload.new : call
+                            );
+                        } 
+                        else if (payload.eventType === 'DELETE') {
+                            return prevCalls.filter((call) => call.id !== payload.old.id);
+                        }
+                        return prevCalls;
+                    });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(dashboardCallsChannel);
+        };
     }, [user, isAdminOrSuper]);
 
     // Compute metrics instantly when dates or selected employee change
     useEffect(() => {
         if (!allCalls) return;
 
-        // Determine whose stats we are calculating
         const targetUserId = (isAdminOrSuper && selectedEmployeeId) ? selectedEmployeeId : user?.id;
 
-        // Daily Time Boundaries
         const [year, month, day] = selectedDate.split('-');
         const targetDayStart = new Date(year, month - 1, day, 0, 0, 0);
         const targetDayEnd = new Date(year, month - 1, day, 23, 59, 59, 999);
 
-        // Weekly Time Boundaries
         const { startOfWeek, endOfWeek } = parseWeek(selectedWeek);
 
-        // All-Time (with Month Filter)
         let filteredAllCalls = allCalls;
         if (allTimeFilter !== 'all') {
             const monthsToSubtract = parseInt(allTimeFilter);
@@ -187,7 +209,6 @@ const Dashboard = () => {
             filteredAllCalls = allCalls.filter(c => new Date(c.created_at) >= cutoffDate);
         }
 
-        // Helper function for dynamic math (Multiplies commission based on appearances)
         const calculateDynamicStats = (callArray, tUserId) => {
             return callArray.reduce((acc, call) => {
                 let multiplier = 0;
@@ -208,11 +229,9 @@ const Dashboard = () => {
             }, { retained: 0, pending: 0, commission: 0 });
         };
 
-        // All-Time
         const allStats = calculateDynamicStats(filteredAllCalls, targetUserId);
         setMetrics({ retained: allStats.retained, pending: allStats.pending });
 
-        // Weekly
         const weekCalls = allCalls.filter(call => {
             const callDate = new Date(call.created_at);
             return callDate >= startOfWeek && callDate <= endOfWeek;
@@ -220,7 +239,6 @@ const Dashboard = () => {
         const weekStats = calculateDynamicStats(weekCalls, targetUserId);
         setWeeklyMetrics({ retained: weekStats.retained, pending: weekStats.pending });
 
-        // Daily
         const dayCalls = allCalls.filter(call => {
             const callDate = new Date(call.created_at);
             return callDate >= targetDayStart && callDate <= targetDayEnd;
@@ -228,10 +246,8 @@ const Dashboard = () => {
         const dayStats = calculateDynamicStats(dayCalls, targetUserId);
         setDailyMetrics({ retained: dayStats.retained, pending: dayStats.pending });
 
-        // Set the distributed totals
         setCommission({ total: allStats.commission, weekly: weekStats.commission, daily: dayStats.commission });
 
-        // Admin Table: Calculate ALL agents for the selected DATE dynamically
         if (isAdminOrSuper && staffList.length > 0) {
             const tableData = staffList.map(emp => {
                 const empDayStats = calculateDynamicStats(dayCalls, emp.id);
@@ -245,6 +261,10 @@ const Dashboard = () => {
                     commission: empDayStats.commission
                 };
             });
+
+            // Sort table data alphabetically by agent name
+            tableData.sort((a, b) => a.name.localeCompare(b.name));
+
             setDailyEmployeeStats(tableData);
         }
     }, [allCalls, selectedEmployeeId, selectedDate, selectedWeek, isAdminOrSuper, staffList, user?.id, allTimeFilter]);
@@ -293,12 +313,7 @@ const Dashboard = () => {
                             disabled={isStartingShift}
                             className="w-full py-3.5 px-4 bg-prime-primary text-white rounded-full font-bold hover:bg-prime-secondary transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                         >
-                            {isStartingShift ? (
-                                <>
-                                    <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                    Starting...
-                                </>
-                            ) : 'OK'}
+                            {isStartingShift ? 'Starting...' : 'OK'}
                         </button>
                     </div>
                 </div>,
@@ -354,14 +369,12 @@ const Dashboard = () => {
                             <h3 className="text-white/90 text-xs font-bold uppercase tracking-widest mb-2">Total Commission Earned</h3>
                             <p className="text-5xl font-bold tracking-tight">Rs. {commission.total}</p>
                         </div>
-                        <div className="absolute right-0 top-0 w-64 h-full bg-white/10 transform skew-x-12 translate-x-10"></div>
                     </div>
                     <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm relative overflow-hidden">
                         <div className="relative z-10">
                             <h3 className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-2">Earned This Week</h3>
                             <p className="text-5xl font-bold tracking-tight text-prime-primary">Rs. {commission.weekly}</p>
                         </div>
-                        <div className="absolute right-0 top-0 w-32 h-full bg-prime-primary/5 transform -skew-x-12 translate-x-4"></div>
                     </div>
                 </div>
 
@@ -373,7 +386,7 @@ const Dashboard = () => {
                         value={selectedDate}
                         max={getLocalDateStr()}
                         onChange={(e) => setSelectedDate(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
+                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer"
                     />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 px-2">
@@ -385,7 +398,6 @@ const Dashboard = () => {
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
                         <p className="text-4xl font-bold text-emerald-500">{dailyMetrics.retained}</p>
                     </div>
-                    
                 </div>
 
                 {/* WEEKLY STATS */}
@@ -396,7 +408,7 @@ const Dashboard = () => {
                         value={selectedWeek}
                         max={getCurrentWeekStr()}
                         onChange={(e) => setSelectedWeek(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
+                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer"
                     />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
@@ -409,14 +421,14 @@ const Dashboard = () => {
                         <p className="text-4xl font-bold text-yellow-500">{weeklyMetrics.pending}</p>
                     </div>
                 </div>
-                
+
                 {/* ALL-TIME STATS */}
                 <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                     <h2 className="text-lg font-semibold text-gray-800">All-Time Stats</h2>
                     <select
                         value={allTimeFilter}
                         onChange={(e) => setAllTimeFilter(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
+                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer"
                     >
                         <option value="all">All Time</option>
                         <option value="1">Past 1 Month</option>
@@ -438,7 +450,7 @@ const Dashboard = () => {
                     </div>
                 </div>
 
-                {/* ADMIN TABLE */}
+                {/* ADMIN TABLE (Sorted Alphabetically) */}
                 {isAdminOrSuper && (
                     <div className="mt-8 pb-10">
                         <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
@@ -448,7 +460,7 @@ const Dashboard = () => {
                                 value={selectedDate}
                                 max={getLocalDateStr()}
                                 onChange={(e) => setSelectedDate(e.target.value)}
-                                className="input-base text-sm py-2 px-4 shadow-sm !w-fit self-start sm:self-auto font-semibold cursor-pointer"
+                                className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer"
                             />
                         </div>
 
@@ -468,12 +480,10 @@ const Dashboard = () => {
                                         {dailyEmployeeStats.length > 0 ? (
                                             dailyEmployeeStats.map(emp => (
                                                 <tr key={emp.id} className={`transition-colors ${emp.retained > 0 ? 'bg-green-100/50 hover:bg-green-100/80' : 'hover:bg-gray-50/50'}`}>
-                                                    
                                                     <td className="p-4 whitespace-nowrap">
                                                         <div className="text-sm font-semibold text-gray-800">{emp.name}</div>
                                                         <div className="text-[10px] font-medium text-gray-400 mt-0.5">Joined: {emp.joiningDate}</div>
                                                     </td>
-
                                                     <td className="p-4 text-sm text-gray-600">{emp.dialingId !== 'N/A' ? `#${emp.dialingId}` : '-'}</td>
                                                     <td className="p-4 text-sm font-bold text-emerald-600">{emp.retained}</td>
                                                     <td className="p-4 text-sm font-bold text-yellow-600">{emp.pending}</td>
@@ -493,7 +503,6 @@ const Dashboard = () => {
                         </div>
                     </div>
                 )}
-
             </div>
         </PageWrapper>
     );

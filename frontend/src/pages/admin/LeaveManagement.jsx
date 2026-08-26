@@ -1,31 +1,63 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
+import { useAuth } from '../../context/AuthContext'; // NEW: Imported useAuth
+import { supabase } from '../../services/supabaseClient';
 
 const LeaveManagement = () => {
+    const { user } = useAuth(); // NEW: Get the currently logged-in admin
     const [leaves, setLeaves] = useState([]);
+    const [users, setUsers] = useState([]); // NEW: State to hold all users for name lookups
     const [loading, setLoading] = useState(true);
 
-    const fetchLeaves = async () => {
+    const fetchData = async () => {
         try {
-            const response = await apiClient.get('/api/v1/leaves/');
-            setLeaves(response.data.data || []);
+            // Fetch both leaves and users in parallel
+            const [leavesRes, usersRes] = await Promise.all([
+                apiClient.get('/api/v1/leaves/'),
+                apiClient.get('/api/v1/users/')
+            ]);
+            setLeaves(leavesRes.data.data || []);
+            setUsers(usersRes.data.data || []);
         } catch (error) {
-            console.error("Failed to fetch leaves", error);
+            console.error("Failed to fetch data", error);
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchLeaves();
+        // 1. Fetch the initial data when the page loads
+        fetchData();
+
+        // 2. Subscribe to real-time changes on the leave_requests table
+        const leaveChannel = supabase
+            .channel('leave-updates')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'leave_requests' },
+                (payload) => {
+                    console.log('Real-time update received!', payload);
+                    // The easiest and safest way to ensure names map correctly 
+                    // is to just trigger your existing fetchData() function!
+                    fetchData();
+                }
+            )
+            .subscribe();
+
+        // 3. Cleanup the connection when the admin leaves the page
+        return () => {
+            supabase.removeChannel(leaveChannel);
+        };
     }, []);
 
     const handleAction = async (id, newStatus) => {
         try {
             await apiClient.put(`/api/v1/leaves/${id}/status`, { status: newStatus });
-            // Update local state without full reload
-            setLeaves(leaves.map(leave => leave.id === id ? { ...leave, status: newStatus } : leave));
+            // Update local state without full reload, instantly injecting the current admin's ID
+            setLeaves(leaves.map(leave => 
+                leave.id === id ? { ...leave, status: newStatus, action_by: user.id } : leave
+            ));
         } catch (error) {
             alert('Failed to update leave status.');
         }
@@ -39,7 +71,6 @@ const LeaveManagement = () => {
         }
     };
 
-    // Helper to format YYYY-MM-DD to DD/MM/YYYY
     const formatToDDMMYYYY = (dateString) => {
         if (!dateString) return '';
         const [year, month, day] = dateString.split('-'); 
@@ -69,18 +100,36 @@ const LeaveManagement = () => {
                                 {loading ? (
                                     <tr><td colSpan="5" className="p-8 text-center text-sm text-gray-500">Loading...</td></tr>
                                 ) : leaves.length > 0 ? (
-                                    leaves.map(leave => (
+                                    leaves.map(leave => {
+                                        // Look up BOTH the employee and the admin
+                                        const adminUser = users.find(u => u.id === leave.action_by);
+                                        const employeeUser = users.find(u => u.id === leave.employee_id);
+                                        
+                                        return (
                                         <tr key={leave.id} className="hover:bg-gray-50/50">
                                             <td className="p-4">
-                                                <div className="font-semibold text-gray-800">{leave.profiles?.full_name || 'Unknown User'}</div>
-                                                <div className="text-xs text-gray-500">{leave.profiles?.email}</div>
+                                                {/* FIXED: Pulling the name and email from our frontend users list */}
+                                                <div className="font-semibold text-gray-800">
+                                                    {employeeUser ? employeeUser.full_name : 'Unknown User'}
+                                                </div>
+                                                <div className="text-xs text-gray-500">
+                                                    {employeeUser ? employeeUser.email : ''}
+                                                </div>
                                                 <div className="text-xs text-gray-400 mt-1">Applied: {new Date(leave.created_at).toLocaleDateString('en-GB')}</div>
                                             </td>
                                             <td className="p-4 text-sm font-semibold text-gray-800 whitespace-nowrap">
                                                 {formatToDDMMYYYY(leave.start_date)} <br/><span className="text-gray-400 font-normal text-xs">to</span> {formatToDDMMYYYY(leave.end_date)}
                                             </td>
                                             <td className="p-4 text-sm text-gray-600 max-w-xs">{leave.reason}</td>
-                                            <td className="p-4">{getStatusBadge(leave.status)}</td>
+                                            <td className="p-4">
+                                                {getStatusBadge(leave.status)}
+                                                {/* NEW: Render the admin's name */}
+                                                {leave.action_by && (
+                                                    <div className="text-[10px] text-gray-400 font-semibold mt-1.5 ml-1 uppercase tracking-wider">
+                                                        By: {adminUser ? adminUser.full_name : 'Admin'}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="p-4 text-right whitespace-nowrap">
                                                 {leave.status === 'pending' ? (
                                                     <div className="flex justify-end gap-2">
@@ -96,7 +145,7 @@ const LeaveManagement = () => {
                                                 )}
                                             </td>
                                         </tr>
-                                    ))
+                                    )})
                                 ) : (
                                     <tr><td colSpan="5" className="p-8 text-center text-sm text-gray-500">No leave requests found.</td></tr>
                                 )}

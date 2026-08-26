@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
+import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
 
 const Attendance = () => {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
-    // NEW: State for the date filter
     const [dateFilter, setDateFilter] = useState(''); 
 
     useEffect(() => {
@@ -20,6 +20,42 @@ const Attendance = () => {
             }
         };
         fetchMyHistory();
+
+        // 2. Add real-time listener for the employee's personal attendance records
+        const myAttendanceChannel = supabase
+            .channel('employee-my-attendance')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'attendance' },
+                (payload) => {
+                    console.log('Live Employee Attendance Update:', payload);
+
+                    // 3. Update ONLY the specific row that changed in the employee's state array
+                    setLogs((prevLogs) => {
+                        if (payload.eventType === 'INSERT') {
+                            // If a new check-in row is added
+                            return [payload.new, ...prevLogs];
+                        } 
+                        else if (payload.eventType === 'UPDATE') {
+                            // If status or checkout changes (e.g., admin approved or shift ended)
+                            return prevLogs.map((log) => 
+                                log.id === payload.new.id ? payload.new : log
+                            );
+                        } 
+                        else if (payload.eventType === 'DELETE') {
+                            // If a record is deleted
+                            return prevLogs.filter((log) => log.id !== payload.old.id);
+                        }
+                        return prevLogs;
+                    });
+                }
+            )
+            .subscribe();
+
+        // 4. Cleanup connection when unmounting
+        return () => {
+            supabase.removeChannel(myAttendanceChannel);
+        };
     }, []);
 
     const calculateTimeSpent = (checkIn, checkOut) => {

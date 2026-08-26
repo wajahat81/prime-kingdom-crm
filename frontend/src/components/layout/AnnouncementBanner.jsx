@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
+import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
+import { useAuth } from '../../context/AuthContext'; // 2. Import auth to check role if needed
 
 const AnnouncementBanner = () => {
+    const { user } = useAuth();
     const [announcement, setAnnouncement] = useState(null);
 
     useEffect(() => {
@@ -16,10 +19,34 @@ const AnnouncementBanner = () => {
             }
         };
 
+        // Fetch immediately on load
         fetchAnnouncement();
-        const interval = setInterval(fetchAnnouncement, 60000);
-        return () => clearInterval(interval);
-    }, []);
+
+        // 3. Add real-time Supabase subscription for instant banner updates
+        const bannerChannel = supabase
+            .channel('announcement-banner-live')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'announcements' },
+                (payload) => {
+                    console.log('New banner broadcasted live:', payload.new);
+                    const newAnn = payload.new;
+
+                    // Verify if it matches the employee's role ("all" or their specific role)
+                    const isRelevant = !newAnn.target_role || newAnn.target_role === 'all' || newAnn.target_role === user?.role;
+
+                    if (isRelevant && newAnn.message) {
+                        setAnnouncement(newAnn.message);
+                    }
+                }
+            )
+            .subscribe();
+
+        // Cleanup listener on unmount
+        return () => {
+            supabase.removeChannel(bannerChannel);
+        };
+    }, [user]);
 
     if (!announcement) return null;
 

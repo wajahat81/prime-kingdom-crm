@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
+import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
+import { useAuth } from '../../context/AuthContext'; // Make sure useAuth is imported to check user ID
 
 const LeaveRequest = () => {
+    const { user } = useAuth(); // Get current logged-in employee
     const [leaves, setLeaves] = useState([]);
     const [formData, setFormData] = useState({ start_date: '', end_date: '', reason: '' });
     const [status, setStatus] = useState({ type: '', message: '' });
@@ -22,7 +25,43 @@ const LeaveRequest = () => {
 
     useEffect(() => {
         fetchLeaves();
-    }, []);
+
+        // 2. Add real-time listener for leave request changes
+        const leaveChannel = supabase
+            .channel('employee-leave-updates')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'leave_requests' },
+                (payload) => {
+                    console.log('Real-time leave update received:', payload);
+
+                    setLeaves((prevLeaves) => {
+                        if (payload.eventType === 'INSERT') {
+                            // If this employee created a new leave request
+                            if (payload.new.employee_id === user?.id) {
+                                return [payload.new, ...prevLeaves];
+                            }
+                        } 
+                        else if (payload.eventType === 'UPDATE') {
+                            // If an admin approved/rejected, update ONLY that specific row
+                            return prevLeaves.map((leave) => 
+                                leave.id === payload.new.id ? payload.new : leave
+                            );
+                        } 
+                        else if (payload.eventType === 'DELETE') {
+                            return prevLeaves.filter((leave) => leave.id !== payload.old.id);
+                        }
+                        return prevLeaves;
+                    });
+                }
+            )
+            .subscribe();
+
+        // 3. Cleanup connection on unmount
+        return () => {
+            supabase.removeChannel(leaveChannel);
+        };
+    }, [user?.id]);
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });

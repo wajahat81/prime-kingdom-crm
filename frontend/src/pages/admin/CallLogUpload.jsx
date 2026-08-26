@@ -28,12 +28,15 @@ const CallLogUpload = () => {
                 const response = await apiClient.get('/api/v1/users/');
                 const data = response.data.data || response.data || [];
                 
-                // Agents can be regular employees or closers
-                setAgents(data.filter(u => u.role === 'employee' || u.role === 'closer'));
+                const sortByName = (a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '');
+
+                const sortedAgents = data.filter(u => u.role === 'employee' || u.role === 'closer').sort(sortByName);
                 
-                // Strictly Closers for the new dropdowns
-                setClosers(data.filter(u => u.role === 'closer'));
-                
+                // Ensure closers are explicitly sorted alphabetically here too
+                const sortedClosers = data.filter(u => u.role === 'closer').sort(sortByName);
+
+                setAgents(sortedAgents);
+                setClosers(sortedClosers);
                 setLoadingEmployees(false);
             } catch (error) {
                 console.error('Failed to fetch staff:', error);

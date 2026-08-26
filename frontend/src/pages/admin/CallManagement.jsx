@@ -3,6 +3,7 @@ import apiClient from '../../services/apiClient';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import PageWrapper from '../../components/layout/PageWrapper';
+import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
 
 const CallManagement = () => {
     const [calls, setCalls] = useState([]);
@@ -39,11 +40,10 @@ const CallManagement = () => {
             setCalls(callsRes.data.data || []);
             
             const staff = (usersRes.data.data || usersRes.data || []);
-            
-            // Agents can be employees or closers
-            setAgents(staff.filter(u => u.role === 'employee' || u.role === 'closer'));
-            // Support roles are strictly closers
-            setClosers(staff.filter(u => u.role === 'closer'));
+            const sortByName = (a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '');
+
+            setAgents(staff.filter(u => u.role === 'employee' || u.role === 'closer').sort(sortByName));
+            setClosers(staff.filter(u => u.role === 'closer').sort(sortByName));
             
             setError(null);
         } catch (err) {
@@ -53,7 +53,44 @@ const CallManagement = () => {
         }
     };
 
-    useEffect(() => { fetchCallsAndUsers(); }, []);
+    useEffect(() => { 
+        fetchCallsAndUsers(); 
+
+        // 2. Add real-time Supabase listener for calls table
+        const callsChannel = supabase
+            .channel('call-management-live')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'calls' },
+                (payload) => {
+                    console.log('Real-time call update:', payload);
+
+                    setCalls((prevCalls) => {
+                        if (payload.eventType === 'INSERT') {
+                            // Instantly prepend the new call log to the top
+                            return [payload.new, ...prevCalls];
+                        } 
+                        else if (payload.eventType === 'UPDATE') {
+                            // Replace only the specific row that was edited
+                            return prevCalls.map((call) => 
+                                call.id === payload.new.id ? payload.new : call
+                            );
+                        } 
+                        else if (payload.eventType === 'DELETE') {
+                            // Remove only the deleted row from state
+                            return prevCalls.filter((call) => call.id !== payload.old.id);
+                        }
+                        return prevCalls;
+                    });
+                }
+            )
+            .subscribe();
+
+        // Cleanup subscription on unmount
+        return () => {
+            supabase.removeChannel(callsChannel);
+        };
+    }, []);
 
     const filteredCalls = calls.filter(call => {
         if (statusFilter === 'all') return true;
@@ -103,7 +140,7 @@ const CallManagement = () => {
                 await apiClient.put(`/api/v1/calls/${currentCallId}`, payload);
             }
             setIsModalOpen(false);
-            fetchCallsAndUsers();
+            // Note: Real-time listener will update state automatically without needing explicit fetchCallsAndUsers() here!
         } catch (err) {
             setError('Failed to save call log.');
         } finally {
@@ -114,7 +151,7 @@ const CallManagement = () => {
     const executeDelete = async () => {
         try {
             await apiClient.delete(`/api/v1/calls/${confirmDeleteDialog.callId}`);
-            fetchCallsAndUsers();
+            // Note: Real-time listener will filter out the deleted row automatically!
         } catch (err) {
             setError('Failed to delete call log.');
         } finally {
@@ -128,7 +165,6 @@ const CallManagement = () => {
         return call.employee_id ? call.employee_id.substring(0, 8) + '...' : 'Unknown';
     };
 
-    // Helper to translate Support IDs into names for the table
     const getCloserName = (id) => {
         if (!id) return null;
         const found = closers.find(c => c.id === id);
@@ -183,7 +219,6 @@ const CallManagement = () => {
                             <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} disabled={formData.status !== 'retained'} className="input-base disabled:opacity-50" />
                         </div>
 
-                        {/* NEW SPLIT FIELDS */}
                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
                             <div>
                                 <label className="block text-[10px] font-bold text-prime-primary uppercase mb-1">Handy</label>
@@ -226,8 +261,6 @@ const CallManagement = () => {
                     >
                         <option value="all">All Statuses</option>
                         <option value="retained">Retained</option>
-                        
-                        
                     </select>
                     <Button onClick={handleOpenAdd} variant="primary" className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap">
                         + Add Log
@@ -263,7 +296,6 @@ const CallManagement = () => {
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
                                         
-                                        {/* NEW: Displays the attached closers */}
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap">
                                             <div className="flex flex-col gap-1 text-[11px] font-medium text-gray-500">
                                                 {call.handy_id && <span><b className="text-prime-primary mr-1">H:</b> {getCloserName(call.handy_id)}</span>}

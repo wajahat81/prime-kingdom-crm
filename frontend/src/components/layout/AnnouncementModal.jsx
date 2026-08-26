@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import apiClient from '../../services/apiClient';
 import Button from '../common/Button';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
 
 const AnnouncementModal = () => {
     const { user } = useAuth();
@@ -14,41 +15,63 @@ const AnnouncementModal = () => {
 
         const checkAnnouncement = async () => {
             try {
-                // Get the ID of the last announcement this specific user clicked "OK" on
                 const storageKey = `last_announcement_seen_${user.id}`;
                 const lastSeen = localStorage.getItem(storageKey);
 
                 const response = await apiClient.get('/api/v1/announcements/active');
                 
-                // If the backend returns a valid announcement
                 if (response.data && response.data.message) {
                     const announcementId = String(response.data.id || response.data.message);
                     
-                    // If this announcement is different from the last one they saw
                     if (lastSeen !== announcementId) {
                         setAnnouncement(response.data);
-                        setDismissed(false); // Force the modal to open
+                        setDismissed(false);
                     }
                 }
             } catch (error) {
-                // Fail silently so it doesn't interrupt the user if the network blips
                 console.error("Could not fetch announcement", error);
             }
         };
 
-        // 1. Check immediately when the dashboard loads
+        // Check immediately on load
         checkAnnouncement();
 
-        // 2. Set up a silent background check every 30 seconds (30000 ms)
-        const intervalId = setInterval(checkAnnouncement, 30000);
+        // 2. Add real-time Supabase subscription for instant popup triggers
+        const modalChannel = supabase
+            .channel('announcement-modal-live')
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'announcements' },
+                (payload) => {
+                    console.log('New announcement broadcasted live:', payload.new);
+                    const newAnn = payload.new;
 
-        // Cleanup the interval if they navigate away from the dashboard
-        return () => clearInterval(intervalId);
+                    // Verify if it matches the employee's role ("all" or their specific role)
+                    const isRelevant = !newAnn.target_role || newAnn.target_role === 'all' || newAnn.target_role === user?.role;
+
+                    if (isRelevant) {
+                        const storageKey = `last_announcement_seen_${user.id}`;
+                        const lastSeen = localStorage.getItem(storageKey);
+                        const announcementId = String(newAnn.id || newAnn.message);
+
+                        // If they haven't seen this new one yet, trigger popup instantly
+                        if (lastSeen !== announcementId) {
+                            setAnnouncement(newAnn);
+                            setDismissed(false);
+                        }
+                    }
+                }
+            )
+            .subscribe();
+
+        // Cleanup listener on unmount
+        return () => {
+            supabase.removeChannel(modalChannel);
+        };
     }, [user]);
 
     const handleDismiss = () => {
         if (announcement && user) {
-            // Save this exact announcement as "seen" so it never pops up again for this user
             const storageKey = `last_announcement_seen_${user.id}`;
             localStorage.setItem(storageKey, String(announcement.id || announcement.message));
             
@@ -57,10 +80,8 @@ const AnnouncementModal = () => {
         }
     };
 
-    // If there's no new announcement, or they just clicked OK, hide the modal
     if (!announcement || dismissed) return null;
 
-    // Use createPortal to guarantee it floats over absolutely everything on the screen
     return createPortal(
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4 animate-fade-in">
             <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full p-8 transform transition-all border border-prime-border">
@@ -71,9 +92,7 @@ const AnnouncementModal = () => {
                     </svg>
                 </div>
                 
-                <h2 className="text-2xl font-bold text-prime-text mb-2 tracking-tight">System Broadcast</h2>
-                
-                
+                <h2 className="text-2xl font-bold text-prime-text mb-2 tracking-tight">Announcement</h2>
                 
                 <p className="text-prime-text leading-relaxed text-[15px] mb-8 font-medium">
                     {announcement.message}

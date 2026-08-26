@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../services/apiClient';
 import Modal from '../common/Modal';
+import { supabase } from '../../services/supabaseClient';
 
 const Navbar = ({ toggleMobileMenu }) => {
     // Added logout to useAuth extraction
@@ -79,6 +80,40 @@ const Navbar = ({ toggleMobileMenu }) => {
         return () => window.removeEventListener('shift-started-event', handleShiftUpdate);
     }, [user]);
 
+    useEffect(() => {
+        if (!user) return;
+
+        const channel = supabase
+            .channel('employee-navbar-live')
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'attendance' },
+                (payload) => {
+                    // Check if this update belongs to the logged-in employee
+                    if (payload.new && payload.new.employee_id === user.id) {
+                        console.log('Real-time shift update received:', payload.new);
+                        
+                        setShiftStatus(payload.new.status);
+                        
+                        if (payload.new.status === 'checked_in' && payload.new.check_in) {
+                            setCheckInTime(payload.new.check_in);
+                            
+                            // Instantly recalculate elapsed time from the original check-in time
+                            const diff = (new Date() - new Date(payload.new.check_in)) / 1000;
+                            setElapsedTime(diff > 0 ? diff : 0);
+                        } else if (payload.new.status === 'checked_out') {
+                            setCheckInTime(null);
+                        }
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [user]);
+
     // Timer logic
     // Timer logic with 9-Hour Auto-Stop Sync
     // Timer logic with Auto-Stop and Database Sync
@@ -129,10 +164,17 @@ const Navbar = ({ toggleMobileMenu }) => {
         setIsProcessing(true);
         setErrorMsg(null);
         try {
-            await apiClient.post('/api/v1/attendance/check-out');
+            // This hits your FastAPI endpoint, which updates Supabase
+            const response = await apiClient.post('/api/v1/attendance/check-out');
+            
             setShiftStatus('checked_out');
             setCheckInTime(null);
             setConfirmAction({ isOpen: false, type: null });
+
+            // OPTIONAL: If you want to force an immediate custom window event 
+            // to update local widgets instantly, you can dispatch it here:
+            window.dispatchEvent(new Event('shift-ended-event'));
+
         } catch (error) {
             setErrorMsg('Failed to end shift properly.');
         } finally {

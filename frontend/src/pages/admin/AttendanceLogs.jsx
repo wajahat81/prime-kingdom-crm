@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
+import { supabase } from '../../services/supabaseClient';
 
 const getLocalDateStr = () => {
-    const tzoffset = (new Date()).getTimezoneOffset() * 60000;
-    return (new Date(Date.now() - tzoffset)).toISOString().split('T')[0];
+    return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
 };
 
 const AttendanceLogs = () => {
@@ -15,6 +15,15 @@ const AttendanceLogs = () => {
     const [attendanceLogs, setAttendanceLogs] = useState([]);
     const [loading, setLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState(null);
+    const [officeSettings, setOfficeSettings] = useState(null);
+
+    // NEW: Live clock to keep active timers ticking
+    const [now, setNow] = useState(new Date());
+    
+    useEffect(() => {
+        const interval = setInterval(() => setNow(new Date()), 60000); // Ticks every 60 seconds
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         if (selectedEmployee === 'all') {
@@ -26,16 +35,34 @@ const AttendanceLogs = () => {
     }, [selectedEmployee]);
 
     useEffect(() => {
-        const fetchUsers = async () => {
+    const fetchUsers = async () => {
+        try {
+            const response = await apiClient.get('/api/v1/users/');
+            const allUsers = response.data.data || response.data || [];
+            
+            const filteredUsers = allUsers.filter(u => u.role === 'employee' || u.role === 'closer' || u.role === 'admin');
+            
+            // Sort employees alphabetically by full name
+            filteredUsers.sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
+            
+            setEmployees(filteredUsers);
+        } catch (error) {
+            console.error('Failed to fetch users:', error);
+        }
+    };
+    fetchUsers();
+}, []);
+
+    useEffect(() => {
+        const fetchSettings = async () => {
             try {
-                const response = await apiClient.get('/api/v1/users/');
-                const allUsers = response.data.data || response.data || [];
-                setEmployees(allUsers.filter(u => u.role === 'employee' || u.role === 'closer'));
+                const res = await apiClient.get('/api/v1/attendance/settings');
+                setOfficeSettings(res.data.data.setting_value);
             } catch (error) {
-                console.error('Failed to fetch users:', error);
+                console.error("Failed to load settings", error);
             }
         };
-        fetchUsers();
+        fetchSettings();
     }, []);
 
     const fetchAttendanceData = async () => {
@@ -58,6 +85,48 @@ const AttendanceLogs = () => {
     };
 
     useEffect(() => {
+        // Subscribe to real-time changes on the attendance table
+        const attendanceChannel = supabase
+            .channel('live-attendance')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'attendance' },
+                (payload) => {
+                    console.log('Live Attendance Update:', payload);
+
+                    // Use functional state update to modify the array directly
+                    setAttendanceLogs((prevLogs) => {
+                        
+                        if (payload.eventType === 'INSERT') {
+                            // Someone checked in: Add the new record to the top of the list
+                            return [payload.new, ...prevLogs];
+                        } 
+                        
+                        else if (payload.eventType === 'UPDATE') {
+                            // Someone checked out or Admin approved: Replace only the changed row
+                            return prevLogs.map((log) => 
+                                log.id === payload.new.id ? payload.new : log
+                            );
+                        } 
+                        
+                        else if (payload.eventType === 'DELETE') {
+                            // Admin deleted a record: Remove it from the UI instantly
+                            return prevLogs.filter((log) => log.id !== payload.old.id);
+                        }
+
+                        return prevLogs;
+                    });
+                }
+            )
+            .subscribe();
+
+        // Cleanup the connection when leaving the page
+        return () => {
+            supabase.removeChannel(attendanceChannel);
+        };
+    }, []); // REMOVED dependencies!
+
+    useEffect(() => {
         if (selectedEmployee === 'all' && !selectedDate) return; 
         fetchAttendanceData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -68,29 +137,47 @@ const AttendanceLogs = () => {
         try {
             await apiClient.put(`/api/v1/attendance/${logId}/status`, { status: actionType });
             setStatusMessage({ type: 'success', text: `Timesheet securely ${actionType}.` });
-            fetchAttendanceData(); 
+            
+            // FIXED: Update ONLY this specific row in local state
+            setAttendanceLogs(prevLogs => prevLogs.map(item => 
+                item.id === logId 
+                    ? { ...item, status: actionType } 
+                    : item
+            ));
+            
         } catch (error) {
             setStatusMessage({ type: 'error', text: `Failed to ${actionType} attendance record.` });
         }
     };
 
-    const calculateTimeSpent = (checkIn, checkOut) => {
-        if (!checkIn || !checkOut) return { text: '-', mins: 0 };
-        const diffMs = new Date(checkOut) - new Date(checkIn);
+    // FIXED: Now calculates live time if the shift is active
+    const calculateTimeSpent = (checkIn, checkOut, status) => {
+        if (!checkIn) return { text: '-', mins: 0 };
+        
+        // If they are active and have no checkout time, use the live 'now' clock!
+        const endTime = (status === 'checked_in' && !checkOut) ? now : new Date(checkOut);
+        
+        if (!endTime || isNaN(endTime)) return { text: '-', mins: 0 };
+        
+        const diffMs = endTime - new Date(checkIn);
         const diffMins = Math.floor(diffMs / 60000);
         const hrs = Math.floor(diffMins / 60);
         const mins = diffMins % 60;
+        
         return { text: `${hrs}h ${mins}m`, mins: diffMins };
     };
 
     let displayData = [];
-    if (selectedEmployee === 'all') {
-        const targetDate = selectedDate || getLocalDateStr();
-        displayData = employees.map(emp => {
-            const log = attendanceLogs.find(l => l.employee_id === emp.id);
-            return { uniqueKey: emp.id, employee: emp, log: log || null, recordDate: targetDate };
-        });
-    } else {
+if (selectedEmployee === 'all') {
+    const targetDate = selectedDate || getLocalDateStr();
+    displayData = employees.map(emp => {
+        const log = attendanceLogs.find(l => l.employee_id === emp.id);
+        return { uniqueKey: emp.id, employee: emp, log: log || null, recordDate: targetDate };
+    });
+    
+    // Sort displayData alphabetically by employee name
+    displayData.sort((a, b) => (a.employee.full_name || '').localeCompare(b.employee.full_name || ''));
+} else {
         const emp = employees.find(e => e.id === selectedEmployee);
         const filteredLogs = selectedDate ? attendanceLogs.filter(l => l.date === selectedDate) : attendanceLogs;
         
@@ -182,40 +269,45 @@ const AttendanceLogs = () => {
 
                                     const cIn = log.check_in ? new Date(log.check_in) : null;
                                     const cOut = log.check_out ? new Date(log.check_out) : null;
-                                    const timeObj = calculateTimeSpent(cIn, cOut);
+                                    
+                                    // FIXED: Pass log.status to the calculation function
+                                    const timeObj = calculateTimeSpent(cIn, cOut, log.status);
+                                    
                                     const isCheckedIn = log.status === 'checked_in';
 
                                     // Dynamic Late Calculation (Check-in rules)
+                                    const rules = officeSettings || {
+                                        standard: { start_time: "13:00", grace_mins: 10, req_hours: 9 },
+                                        friday: { start_time: "15:00", grace_mins: 10, req_hours: 7 },
+                                        saturday: { start_time: "14:00", grace_mins: 10, req_hours: 5.75 }
+                                    };
+
                                     let isLate = false;
+                                    let isEarlyCheckout = false;
+
                                     if (cIn) {
                                         const dayOfWeek = cIn.getDay(); 
-                                        const hour = cIn.getHours();
-                                        const mins = cIn.getMinutes();
+                                        
+                                        // Determine which day profile to use
+                                        let dayProfile = rules.standard;
+                                        if (dayOfWeek === 5) dayProfile = rules.friday;
+                                        if (dayOfWeek === 6) dayProfile = rules.saturday;
 
-                                        if (dayOfWeek === 5) {
-                                            isLate = (hour > 15 || (hour === 15 && mins > 10));
-                                        } else if (dayOfWeek === 6) {
-                                            isLate = (hour > 14 || (hour === 14 && mins > 10));
-                                        } else {
-                                            isLate = (hour > 13 || (hour === 13 && mins > 10));
+                                        // 1. DYNAMIC LATE CALCULATION
+                                        const [startHour, startMin] = dayProfile.start_time.split(':').map(Number);
+                                        const cInHour = cIn.getHours();
+                                        const cInMin = cIn.getMinutes();
+                                        
+                                        // Late if hour is greater, OR if hour is same but minutes exceed grace period
+                                        if (cInHour > startHour || (cInHour === startHour && cInMin > startMin + dayProfile.grace_mins)) {
+                                            isLate = true;
                                         }
-                                    }
 
-                                    // NEW: Dynamic Early Checkout Calculation
-                                    let isEarlyCheckout = false;
-                                    if (cIn && cOut && !isCheckedIn) {
-                                        const dayOfWeek = cIn.getDay();
-                                        const totalMins = timeObj.mins; // calculated in calculateTimeSpent
-
-                                        if (dayOfWeek === 5) {
-                                            // Friday: Required 7 hours (420 mins)
-                                            isEarlyCheckout = totalMins < 420;
-                                        } else if (dayOfWeek === 6) {
-                                            // Saturday: Required 5h 45m (345 mins)
-                                            isEarlyCheckout = totalMins < 345;
-                                        } else {
-                                            // Standard days: Required 9 hours (540 mins)
-                                            isEarlyCheckout = totalMins < 540;
+                                        // 2. DYNAMIC EARLY OUT CALCULATION
+                                        if (cOut && !isCheckedIn) {
+                                            const totalMins = timeObj.mins;
+                                            const requiredMins = dayProfile.req_hours * 60;
+                                            isEarlyCheckout = totalMins < requiredMins;
                                         }
                                     }
                                     
@@ -238,7 +330,9 @@ const AttendanceLogs = () => {
                                                         {cOut ? cOut.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Active'}
                                                     </span>
                                                     {isEarlyCheckout && (
-                                                        <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Early Out</span>
+                                                        <span className="bg-amber-100 text-amber-700 text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">
+                                                            Incomplete Shift
+                                                        </span>
                                                     )}
                                                 </div>
                                             </td>
@@ -264,6 +358,30 @@ const AttendanceLogs = () => {
                                                             <button onClick={() => handleDirectStatusUpdate(log.id, 'approved')} className="text-green-600 hover:text-green-800 text-xs font-bold uppercase">Approve</button>
                                                             <button onClick={() => handleDirectStatusUpdate(log.id, 'rejected')} className="text-red-600 hover:text-red-800 text-xs font-bold uppercase mx-2">Reject</button>
                                                         </>
+                                                    )}
+                                                    
+                                                    {/* NEW: Reopen Button for prematurely closed shifts */}
+                                                    {log.status === 'checked_out' && (
+                                                        <button 
+                                                            onClick={async () => {
+                                                                try {
+                                                                    await apiClient.put(`/api/v1/attendance/${log.id}/reopen`);
+                                                                    
+                                                                    // FIXED: Update ONLY this specific row in local state
+                                                                    setAttendanceLogs(prevLogs => prevLogs.map(item => 
+                                                                        item.id === log.id 
+                                                                            ? { ...item, check_out: null, status: 'checked_in' } 
+                                                                            : item
+                                                                    ));
+                                                                    
+                                                                } catch (error) {
+                                                                    console.error("Failed to reopen shift", error);
+                                                                }
+                                                            }} 
+                                                            className="text-blue-600 hover:text-blue-800 text-xs font-bold uppercase ml-2"
+                                                        >
+                                                            Reopen
+                                                        </button>
                                                     )}
                                                 </div>
                                             </td>

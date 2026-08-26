@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
 import { useAuth } from '../../context/AuthContext';
+import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
 
 const Announcements = () => {
     const { user } = useAuth();
@@ -27,6 +28,45 @@ const Announcements = () => {
             }
         };
         fetchAnnouncements();
+
+        // 2. Add real-time listener for announcements
+        const announcementsChannel = supabase
+            .channel('company-announcements-live')
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'announcements' },
+                (payload) => {
+                    console.log('Real-time announcement update:', payload);
+
+                    setAnnouncements((prevAnnouncements) => {
+                        if (payload.eventType === 'INSERT') {
+                            const newAnnouncement = payload.new;
+                            // Check if this new announcement matches the employee's role
+                            const isRelevant = !newAnnouncement.target_role || newAnnouncement.target_role === 'all' || newAnnouncement.target_role === user?.role;
+                            
+                            if (isRelevant) {
+                                // Instantly add the new announcement to the top of the list
+                                return [newAnnouncement, ...prevAnnouncements];
+                            }
+                        } 
+                        else if (payload.eventType === 'UPDATE') {
+                            return prevAnnouncements.map((ann) => 
+                                ann.id === payload.new.id ? payload.new : ann
+                            );
+                        } 
+                        else if (payload.eventType === 'DELETE') {
+                            return prevAnnouncements.filter((ann) => ann.id !== payload.old.id);
+                        }
+                        return prevAnnouncements;
+                    });
+                }
+            )
+            .subscribe();
+
+        // 3. Cleanup channel on unmount
+        return () => {
+            supabase.removeChannel(announcementsChannel);
+        };
     }, [user]);
 
     const formatDate = (dateString) => {

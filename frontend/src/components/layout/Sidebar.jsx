@@ -27,6 +27,9 @@ const Sidebar = ({ closeMobileMenu }) => {
             items.push({ path: '/admin/attendance', label: 'Attendance' });
             items.push({ path: '/admin/leaves', label: 'Manage Leave Requests' });
             items.push({ path: '/admin/users', label: 'Manage Users' }); 
+            
+            // NEW: Added Office Settings here!
+            items.push({ path: '/admin/office-settings', label: 'Manage Office Timings' });
         }
         
         // Super Admin only links

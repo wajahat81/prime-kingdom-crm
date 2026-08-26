@@ -37,27 +37,36 @@ async def submit_leave_request(
 @router.get("/")
 async def get_leave_requests(current_user: dict = Depends(get_current_active_user)):
     """Employees see their own requests; Admins see ALL requests."""
-    is_admin = current_user.get('role') in ['admin', 'super_admin']
-    
-    query = supabase.table('leave_requests').select('*, profiles(full_name, email)')
-    
-    if not is_admin:
-        query = query.eq('employee_id', current_user['id'])
+    try:
+        is_admin = current_user.get('role') in ['admin', 'super_admin']
         
-    response = query.order('created_at', desc=True).execute()
-    return {"data": response.data if response.data else []}
+        # FIXED: Removed the ambiguous profiles join
+        query = supabase.table('leave_requests').select('*')
+        
+        if not is_admin:
+            query = query.eq('employee_id', current_user['id'])
+            
+        response = query.order('created_at', desc=True).execute()
+        return {"data": response.data if response.data else []}
+        
+    except Exception as e:
+        print(f"GET leaves error: {e}")
+        # Raising an HTTPException ensures CORS headers are still attached on failure
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{leave_id}/status")
 async def update_leave_status(
-    leave_id: str, 
+    leave_id: str,
     payload: LeaveStatusUpdate, 
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Admin approves or rejects a leave request."""
-    if payload.status not in ["approved", "rejected"]:
-        raise HTTPException(status_code=400, detail="Invalid status. Must be 'approved' or 'rejected'.")
+    try:
+        # FIXED: Changed 'leaves' to 'leave_requests' to match your database!
+        update_response = supabase.table('leave_requests').update({
+            'status': payload.status,
+            'action_by': current_user['id'] 
+        }).eq('id', leave_id).execute()
         
-    response = supabase.table('leave_requests').update({"status": payload.status}).eq('id', leave_id).execute()
-    if response.data:
-        return {"message": f"Leave request {payload.status}", "data": response.data[0]}
-    raise HTTPException(status_code=404, detail="Leave request not found")
+        return {"message": "Leave updated", "data": update_response.data}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

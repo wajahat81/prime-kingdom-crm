@@ -23,16 +23,18 @@ const UserManagement = () => {
     const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', action: null });
 
     const fetchUsers = async () => {
-        try {
-            setLoadingUsers(true);
-            const response = await apiClient.get('/api/v1/users/'); 
-            setUsers(response.data.data || response.data || []);
-        } catch (error) {
-            console.error('Failed to fetch users:', error);
-        } finally {
-            setLoadingUsers(false);
-        }
-    };
+    try {
+        const response = await apiClient.get('/api/v1/users/');
+        const usersData = response.data.data || response.data || [];
+        
+        // Sort users alphabetically by full name
+        usersData.sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
+        
+        setUsers(usersData);
+    } catch (error) {
+        console.error("Failed to fetch users", error);
+    }
+};
 
     useEffect(() => { fetchUsers(); }, []);
 

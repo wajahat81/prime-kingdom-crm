@@ -10,12 +10,10 @@ const TerminatedEmployees = () => {
     const [message, setMessage] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Edit modal states
     const [editingUser, setEditingUser] = useState(null);
     const [editFormData, setEditFormData] = useState({ full_name: '', cnic: '', dialing_id: '' });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Confirmation dialog for permanent delete
     const [confirmDeleteId, setConfirmDeleteId] = useState(null);
 
     const fetchTerminatedUsers = async () => {
@@ -34,7 +32,6 @@ const TerminatedEmployees = () => {
     useEffect(() => {
         fetchTerminatedUsers();
 
-        // --- REAL-TIME SUPABASE WEBSOCKET SUBSCRIPTION ---
         const terminatedChannel = supabase
             .channel('live-terminated-users')
             .on(
@@ -48,22 +45,20 @@ const TerminatedEmployees = () => {
                         const oldUser = payload.old;
 
                         if (payload.eventType === 'UPDATE') {
-                            // If user is no longer inactive (restored), remove from list instantly
                             if (updatedUser.is_active === true) {
                                 return prevList.filter(u => u.id !== updatedUser.id);
                             }
-                            // Otherwise update their row data in real-time
                             const exists = prevList.some(u => u.id === updatedUser.id);
                             if (exists) {
                                 return prevList.map(u => u.id === updatedUser.id ? updatedUser : u);
                             } else if (updatedUser.is_active === false) {
-                                // Newly terminated user added
                                 return [updatedUser, ...prevList];
                             }
                         } else if (payload.eventType === 'INSERT' && updatedUser.is_active === false) {
                             return [updatedUser, ...prevList];
                         } else if (payload.eventType === 'DELETE') {
-                            return prevList.filter(u => u.id === oldUser.id);
+                            // 🚨 THE FIX: Use !== so it keeps everyone EXCEPT the deleted user
+                            return prevList.filter(u => u.id !== oldUser.id);
                         }
                         return prevList;
                     });
@@ -80,7 +75,6 @@ const TerminatedEmployees = () => {
         try {
             await apiClient.put(`/api/v1/users/${userId}/restore`, { is_active: true });
             setMessage({ type: 'success', text: 'Employee successfully restored to active status.' });
-            // Realtime websocket will handle UI state sync automatically
         } catch (err) {
             console.error("Failed to restore user", err);
             setMessage({ type: 'error', text: 'Failed to restore user account.' });
@@ -92,7 +86,6 @@ const TerminatedEmployees = () => {
             await apiClient.delete(`/api/v1/users/${userId}/permanent`);
             setMessage({ type: 'success', text: 'Employee record permanently deleted.' });
             setConfirmDeleteId(null);
-            // Realtime websocket will handle UI state sync automatically
         } catch (err) {
             console.error("Failed to permanently delete user", err);
             setMessage({ type: 'error', text: 'Failed to permanently delete record.' });
@@ -114,7 +107,7 @@ const TerminatedEmployees = () => {
             await apiClient.put(`/api/v1/users/${editingUser.id}`, editFormData);
             setMessage({ type: 'success', text: 'Terminated profile updated successfully.' });
             setEditingUser(null);
-            fetchTerminatedUsers();
+            // No need to call fetchTerminatedUsers() here since the WebSocket handles it!
         } catch (err) {
             setMessage({ type: 'error', text: 'Failed to update user profile.' });
         } finally {
@@ -122,7 +115,6 @@ const TerminatedEmployees = () => {
         }
     };
 
-    // Filter terminated employees by name, CNIC, or dialing ID
     const filteredTerminatedList = terminatedList.filter(user => {
         const query = searchTerm.toLowerCase();
         const matchName = user.full_name?.toLowerCase().includes(query);
@@ -146,7 +138,6 @@ const TerminatedEmployees = () => {
                 </div>
             )}
 
-            {/* EDIT MODAL */}
             <Modal 
                 isOpen={!!editingUser} 
                 onClose={() => setEditingUser(null)} 
@@ -188,7 +179,6 @@ const TerminatedEmployees = () => {
                 )}
             </Modal>
 
-            {/* PERMANENT DELETE CONFIRMATION MODAL */}
             <Modal 
                 isOpen={!!confirmDeleteId} 
                 onClose={() => setConfirmDeleteId(null)} 
@@ -201,10 +191,8 @@ const TerminatedEmployees = () => {
                 </p>
             </Modal>
 
-            {/* CARD CONTAINER WITH SEARCH */}
             <div className="card-base flex flex-col min-h-[400px] w-full overflow-hidden bg-white rounded-3xl border border-gray-200 shadow-sm">
                 
-                {/* SEARCH BAR */}
                 <div className="p-4 md:px-6 border-b border-gray-100 bg-gray-50/50">
                     <div className="relative">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -251,7 +239,6 @@ const TerminatedEmployees = () => {
                                         </td>
                                         <td className="px-6 py-5 whitespace-nowrap text-right">
                                             <div className="flex items-center justify-end gap-2">
-                                                {/* Edit Button */}
                                                 <button 
                                                     onClick={() => openEditModal(emp)} 
                                                     title="Edit Details"
@@ -262,7 +249,6 @@ const TerminatedEmployees = () => {
                                                     </svg>
                                                 </button>
 
-                                                {/* Restore Button */}
                                                 <button 
                                                     onClick={() => handleRestoreUser(emp.id)}
                                                     className="px-3 py-1.5 bg-prime-primary/10 text-prime-primary hover:bg-prime-primary hover:text-white rounded-full text-xs font-bold transition-colors"
@@ -270,7 +256,6 @@ const TerminatedEmployees = () => {
                                                     Restore
                                                 </button>
 
-                                                {/* Permanent Delete Button */}
                                                 <button 
                                                     onClick={() => setConfirmDeleteId(emp.id)}
                                                     title="Delete Permanently"

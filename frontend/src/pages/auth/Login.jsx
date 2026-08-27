@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/common/Button';
@@ -8,14 +8,24 @@ const Login = () => {
     const [identifier, setIdentifier] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
+    const [expiredMessage, setExpiredMessage] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const navigate = useNavigate();
     const { login } = useAuth();
 
+    // Check if the user was redirected here due to an expired session
+    useEffect(() => {
+        const queryParams = new URLSearchParams(window.location.search);
+        if (queryParams.get('expired') === 'true') {
+            setExpiredMessage('Your session has expired. Please sign in again.');
+        }
+    }, []);
+
     const handleSubmit = async (e) => {
         e.preventDefault();
         setError('');
+        setExpiredMessage(''); // Clear expiry notice on new submission attempt
         setLoading(true);
 
         try {
@@ -45,6 +55,13 @@ const Login = () => {
                         </p>
                     </div>
 
+                    {/* Session Expiration Notice */}
+                    {expiredMessage && (
+                        <div className="text-amber-700 text-sm font-medium text-center bg-amber-50 px-6 py-3 rounded-full border border-amber-200">
+                            {expiredMessage}
+                        </div>
+                    )}
+
                     <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
                         <div className="space-y-4">
                             <div>
@@ -62,7 +79,6 @@ const Login = () => {
                             </div>
                             
                             <div>
-                                {/* Password Label (Now alone at the top) */}
                                 <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-1">
                                     Password
                                 </label>
@@ -97,7 +113,6 @@ const Login = () => {
                                     </button>
                                 </div>
 
-                                {/* Forgot Password Link (Now below the input) */}
                                 <div className="flex justify-end mt-2 mr-1">
                                     <Link to="/forgot-password" className="text-xs font-semibold text-prime-primary hover:text-prime-secondary transition-colors">
                                         Forgot Password?

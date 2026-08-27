@@ -3,6 +3,7 @@ from typing import List, Optional
 from pydantic import BaseModel 
 from app.core.permissions import get_current_active_user, require_role
 from app.db.session import supabase
+from app.api.v1.audit import log_audit # <-- IMPORTED HELPER
 import logging
 import uuid 
 
@@ -10,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# --- Simplified Internal Schema for Updates ---
 class FullCallUpdate(BaseModel):
     client_name: str
     employee_id: str
@@ -25,7 +25,6 @@ async def upload_call_log(
     call_in: dict,
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Log a new call securely."""
     try:
         new_record = {
             "id": str(uuid.uuid4()),
@@ -44,6 +43,13 @@ async def upload_call_log(
         if not response.data:
             raise HTTPException(status_code=500, detail="Failed to insert call log into database.")
             
+        # 🚨 LOG ACTIVITY
+        log_audit(
+            admin_id=current_user['id'], 
+            action_type="Call Log Created", 
+            description=f"Added call record for client: {call_in.get('client_name')}"
+        )
+            
         return {"message": "Call log created securely", "data": response.data[0]}
     except HTTPException:
         raise
@@ -55,7 +61,6 @@ async def upload_call_log(
 async def get_my_calls(current_user: dict = Depends(get_current_active_user)):
     try:
         user_id = current_user['id']
-        # Fetch calls where the user is the agent OR selected as any closer[cite: 11]
         query = f"employee_id.eq.{user_id},handy_id.eq.{user_id},closer_id.eq.{user_id},doc_sign_id.eq.{user_id}"
         
         response = supabase.table('calls').select('*').or_(query).order('created_at', desc=True).execute()
@@ -67,7 +72,6 @@ async def get_my_calls(current_user: dict = Depends(get_current_active_user)):
 async def get_all_calls_endpoint(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Admin gets all call logs, including employee names."""
     try:
         response = supabase.table('calls') \
             .select('*, profiles!calls_employee_id_fkey(full_name)') \
@@ -85,7 +89,6 @@ async def full_edit_call_log(
     call_update: FullCallUpdate, 
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Admin edits all details of a call log."""
     try:
         update_dict = call_update.dict()
         
@@ -100,6 +103,13 @@ async def full_edit_call_log(
         if not response.data:
             raise HTTPException(status_code=404, detail="Call record not found.")
             
+        # 🚨 LOG ACTIVITY
+        log_audit(
+            admin_id=current_user['id'], 
+            action_type="Call Log Edited", 
+            description=f"Updated call record for client: {update_dict['client_name']}"
+        )
+            
         return {"message": "Call log updated securely", "data": response.data[0]}
     except Exception as e:
         logger.error(f"Full Edit error: {e}")
@@ -110,12 +120,22 @@ async def delete_call_log(
     call_id: str,
     current_user: dict = Depends(require_role(["admin", "super_admin"])) 
 ):
-    """Admin permanently deletes a call log."""
     try:
+        # Fetch client name before deleting for the log
+        call_data = supabase.table('calls').select('client_name').eq('id', call_id).execute()
+        target_client = call_data.data[0]['client_name'] if call_data.data else call_id
+
         response = supabase.table('calls').delete().eq('id', call_id).execute()
         
         if not response.data:
              raise HTTPException(status_code=404, detail="Call record not found.")
+             
+        # 🚨 LOG ACTIVITY WITH CLIENT NAME
+        log_audit(
+            admin_id=current_user['id'], 
+            action_type="Call Log Deleted", 
+            description=f"Deleted call record for client: {target_client}"
+        )
              
         return {"message": "Call log deleted successfully"}
     except Exception as e:

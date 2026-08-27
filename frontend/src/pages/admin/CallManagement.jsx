@@ -3,12 +3,11 @@ import apiClient from '../../services/apiClient';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import PageWrapper from '../../components/layout/PageWrapper';
-import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
+import { supabase } from '../../services/supabaseClient';
 
 const CallManagement = () => {
     const [calls, setCalls] = useState([]);
     
-    // Separated user lists for dropdowns
     const [agents, setAgents] = useState([]);
     const [closers, setClosers] = useState([]);
     
@@ -16,13 +15,11 @@ const CallManagement = () => {
     const [error, setError] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
     
-    // Edit/Add Modal States
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState('add'); 
     const [currentCallId, setCurrentCallId] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Delete Modal State
     const [confirmDeleteDialog, setConfirmDeleteDialog] = useState({ isOpen: false, callId: null });
 
     const [formData, setFormData] = useState({
@@ -56,40 +53,23 @@ const CallManagement = () => {
     useEffect(() => { 
         fetchCallsAndUsers(); 
 
-        // 2. Add real-time Supabase listener for calls table
         const callsChannel = supabase
             .channel('call-management-live')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'calls' },
                 (payload) => {
-                    console.log('Real-time call update:', payload);
-
                     setCalls((prevCalls) => {
-                        if (payload.eventType === 'INSERT') {
-                            // Instantly prepend the new call log to the top
-                            return [payload.new, ...prevCalls];
-                        } 
-                        else if (payload.eventType === 'UPDATE') {
-                            // Replace only the specific row that was edited
-                            return prevCalls.map((call) => 
-                                call.id === payload.new.id ? payload.new : call
-                            );
-                        } 
-                        else if (payload.eventType === 'DELETE') {
-                            // Remove only the deleted row from state
-                            return prevCalls.filter((call) => call.id !== payload.old.id);
-                        }
+                        if (payload.eventType === 'INSERT') return [payload.new, ...prevCalls];
+                        else if (payload.eventType === 'UPDATE') return prevCalls.map((call) => call.id === payload.new.id ? payload.new : call);
+                        else if (payload.eventType === 'DELETE') return prevCalls.filter((call) => call.id !== payload.old.id);
                         return prevCalls;
                     });
                 }
             )
             .subscribe();
 
-        // Cleanup subscription on unmount
-        return () => {
-            supabase.removeChannel(callsChannel);
-        };
+        return () => supabase.removeChannel(callsChannel);
     }, []);
 
     const filteredCalls = calls.filter(call => {
@@ -140,7 +120,6 @@ const CallManagement = () => {
                 await apiClient.put(`/api/v1/calls/${currentCallId}`, payload);
             }
             setIsModalOpen(false);
-            // Note: Real-time listener will update state automatically without needing explicit fetchCallsAndUsers() here!
         } catch (err) {
             setError('Failed to save call log.');
         } finally {
@@ -151,7 +130,6 @@ const CallManagement = () => {
     const executeDelete = async () => {
         try {
             await apiClient.delete(`/api/v1/calls/${confirmDeleteDialog.callId}`);
-            // Note: Real-time listener will filter out the deleted row automatically!
         } catch (err) {
             setError('Failed to delete call log.');
         } finally {
@@ -160,9 +138,20 @@ const CallManagement = () => {
     };
 
     const getEmployeeName = (call) => {
+        // 1. Works for initial page loads (Joined from backend)
         if (call.profiles && call.profiles.full_name) return call.profiles.full_name;
         if (call.employee_name) return call.employee_name;
-        return call.employee_id ? call.employee_id.substring(0, 8) + '...' : 'Unknown';
+        
+        // 2. NEW FIX for real-time inserts: Lookup the name from the local agents state array
+        if (call.employee_id) {
+            const foundAgent = agents.find(a => a.id === call.employee_id);
+            if (foundAgent) return foundAgent.full_name || foundAgent.email;
+            
+            // Fallback just in case
+            return call.employee_id.substring(0, 8) + '...';
+        }
+        
+        return 'Unknown';
     };
 
     const getCloserName = (id) => {
@@ -171,9 +160,41 @@ const CallManagement = () => {
         return found ? (found.full_name || found.email) : 'Unknown';
     };
 
+    // --- CSV EXPORT LOGIC ---
+    const handleExportCSV = () => {
+        if (filteredCalls.length === 0) {
+            setError('No data available to export.');
+            return;
+        }
+
+        const headers = ['Client Name', 'Agent', 'Handy', 'Closer', 'Doc Sign', 'Status', 'Commission'];
+        const csvRows = filteredCalls.map((call) => {
+            return [
+                `"${call.client_name || 'N/A'}"`, 
+                `"${getEmployeeName(call)}"`, 
+                `"${getCloserName(call.handy_id) || '-'}"`, 
+                `"${getCloserName(call.closer_id) || '-'}"`, 
+                `"${getCloserName(call.doc_sign_id) || '-'}"`, 
+                `"${call.status}"`, 
+                `"${call.status === 'retained' ? call.commission : 0}"`
+            ].join(',');
+        });
+
+        const csvContent = [headers.join(','), ...csvRows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        
+        link.setAttribute('href', url);
+        link.setAttribute('download', `Call_Logs_Export_${new Date().toISOString().split('T')[0]}.csv`);
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     return (
         <PageWrapper title="Call Logs">
-            {/* Delete Confirmation Modal */}
             <Modal 
                 isOpen={confirmDeleteDialog.isOpen} 
                 onClose={() => setConfirmDeleteDialog({ isOpen: false, callId: null })} 
@@ -184,7 +205,6 @@ const CallManagement = () => {
                 <p className="text-sm font-medium text-prime-muted">Are you sure you want to permanently delete this call log?</p>
             </Modal>
 
-            {/* Add / Edit Form Modal */}
             <Modal 
                 isOpen={isModalOpen} 
                 onClose={() => setIsModalOpen(false)} 
@@ -253,7 +273,9 @@ const CallManagement = () => {
                         {filteredCalls.length} Records
                     </span>
                 </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
+                
+                {/* EXPORT AND ADD BUTTONS */}
+                <div className="flex items-center justify-end gap-3 w-full md:w-auto">
                     <select 
                         value={statusFilter} 
                         onChange={(e) => setStatusFilter(e.target.value)}
@@ -262,6 +284,15 @@ const CallManagement = () => {
                         <option value="all">All Statuses</option>
                         <option value="retained">Retained</option>
                     </select>
+
+                    <button 
+                        onClick={handleExportCSV} 
+                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                        CSV
+                    </button>
+
                     <Button onClick={handleOpenAdd} variant="primary" className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap">
                         + Add Log
                     </Button>

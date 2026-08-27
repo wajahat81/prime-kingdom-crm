@@ -5,6 +5,7 @@ from slowapi.errors import RateLimitExceeded # Added to catch the error
 from slowapi.util import get_remote_address
 from app.api.v1 import auth, calls, attendance, announcements, users, leaves
 from app.limiter import limiter  
+from app.api.v1 import audit
 import os
 
 # Check if we are in production (default to 'development' if not set)
@@ -63,3 +64,4 @@ app.include_router(attendance.router, prefix="/api/v1/attendance", tags=["attend
 app.include_router(announcements.router, prefix="/api/v1/announcements", tags=["announcements"])
 app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(leaves.router, prefix="/api/v1/leaves", tags=["Leaves"])
+app.include_router(audit.router, prefix="/api/v1/audit", tags=["Audit"])

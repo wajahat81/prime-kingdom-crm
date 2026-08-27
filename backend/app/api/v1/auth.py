@@ -5,6 +5,7 @@ from app.db.session import supabase
 from app.schemas.auth_schema import Token, UserCreate, ChangePasswordRequest
 from app.limiter import limiter
 from app.core.permissions import require_role
+from app.api.v1.audit import log_audit # <-- IMPORTED HELPER
 import logging
 import uuid
 
@@ -18,7 +19,6 @@ async def login(response: Response, request: Request, form_data: OAuth2PasswordR
         identifier = form_data.username.strip()
         logger.info(f"Login attempt for identifier: {identifier}")
         
-        # FIXED: Added 'device_token' to both select queries!
         if identifier.isdigit() and len(identifier) == 4:
             db_response = supabase.table('profiles').select('id, role, password_hash, email, full_name, dialing_id, device_token').eq('dialing_id', identifier).execute()
         else:
@@ -32,7 +32,6 @@ async def login(response: Response, request: Request, form_data: OAuth2PasswordR
         if not verify_password(form_data.password, user_data['password_hash']):
             raise HTTPException(status_code=400, detail="Incorrect credentials")
         
-        # --- NEW DEVICE LOCKDOWN LOGIC ---
         if user_data['role'] not in ['admin', 'super_admin']:
             saved_token = user_data.get('device_token')
             client_token = request.headers.get("x-device-token")
@@ -42,13 +41,11 @@ async def login(response: Response, request: Request, form_data: OAuth2PasswordR
                 
             if client_token != saved_token:
                 raise HTTPException(status_code=403, detail="Unrecognized device. You can only log in from your specific assigned office computer.")
-        # ---------------------------------
         
         access_token = create_access_token(
             data={"sub": str(user_data['id']), "role": user_data['role']}
         )
         
-        # --- SMART COOKIE LOGIC ---
         is_production = "primekingdom.org" in str(request.url)
         
         response.set_cookie(
@@ -61,7 +58,6 @@ async def login(response: Response, request: Request, form_data: OAuth2PasswordR
             path="/",
             max_age=60 * 60 * 12
         )
-        # ------------------------
         
         logger.info(f"Login successful for user: {identifier}")
         
@@ -86,24 +82,19 @@ async def register_user(
     user_data: UserCreate,
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Register a new user with optional email/dialing_id and joining_date."""
     try:
-        # Convert empty strings to None
         processed_email = user_data.email.strip() if user_data.email and user_data.email.strip() != "" else None
 
-        # Check if email already exists
         if processed_email:
             check_email = supabase.table('profiles').select('email').eq('email', processed_email).execute()
             if check_email.data:
                 raise HTTPException(status_code=400, detail="Email already registered")
             
-        # Check if dialing_id already exists
         if getattr(user_data, 'dialing_id', None):
             check_did = supabase.table('profiles').select('dialing_id').eq('dialing_id', user_data.dialing_id).execute()
             if check_did.data:
                 raise HTTPException(status_code=400, detail="Dialing ID already assigned to another user")
         
-        # Create new user
         new_user = {
             "id": str(uuid.uuid4()),
             "email": processed_email,
@@ -117,6 +108,14 @@ async def register_user(
         response = supabase.table('profiles').insert(new_user).execute()
         
         if response.data:
+            # 🚨 LOG ACTIVITY
+            new_did = getattr(user_data, 'dialing_id', 'None') or 'None'
+            log_audit(
+                admin_id=current_user['id'], 
+                action_type="User Created", 
+                description=f"Created new account for {user_data.full_name} (ID: {new_did})"
+            )
+            
             return {
                 "message": "User created successfully",
                 "user": response.data[0]
@@ -136,12 +135,10 @@ async def change_password(
     password_data: ChangePasswordRequest,
     current_user: dict = Depends(get_current_user)
 ):
-    """Allow a logged-in user to securely change their password."""
     try:
         user_id = str(current_user['id'])
         logger.info(f"Password change attempt for user ID: {user_id}")
         
-        # 1. Fetch current password hash from Supabase
         response = supabase.table('profiles').select('password_hash').eq('id', user_id).execute()
         
         if not response.data:
@@ -149,15 +146,12 @@ async def change_password(
             
         user_record = response.data[0]
         
-        # 2. Verify the old password is correct
         if not verify_password(password_data.current_password, user_record['password_hash']):
             logger.warning(f"Invalid current password provided by user ID: {user_id}")
             raise HTTPException(status_code=400, detail="Incorrect current password")
             
-        # 3. Hash the new password
         new_hashed_password = get_password_hash(password_data.new_password)
         
-        # 4. Update the database
         update_response = supabase.table('profiles').update(
             {"password_hash": new_hashed_password}
         ).eq('id', user_id).execute()

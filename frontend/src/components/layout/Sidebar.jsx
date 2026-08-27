@@ -11,29 +11,24 @@ const Sidebar = ({ closeMobileMenu }) => {
     const getNavItems = () => {
         const items = [];
         
-        // Everyone gets the Dashboard
         items.push({ path: '/dashboard', label: 'Dashboard' });
 
-        // Agent & Closer specific links
         if (user?.role === 'employee' || user?.role === 'closer' || user?.role === ROLES.EMPLOYEE) {
             items.push({ path: '/announcements', label: 'Announcements' });
             items.push({ path: '/attendance', label: 'My Attendance' });
             items.push({ path: '/leaves', label: 'Leave Requests' });
         }
 
-        // Admin & Super Admin specific links
         if (user?.role === ROLES.ADMIN || user?.role === ROLES.SUPER_ADMIN) {
             items.push({ path: '/admin/attendance', label: 'Attendance' });
             items.push({ path: '/admin/calls/manage', label: 'Manage Cases' });   
             items.push({ path: '/admin/users', label: 'Manage Users' }); 
             items.push({ path: '/admin/leaves', label: 'Manage Leave Requests' });
-            
-            // NEW: Added Office Settings here!
             items.push({ path: '/admin/office-settings', label: 'Manage Office Timings' });
             items.push({ path: '/admin/terminated-employees', label: 'Manage Terminated Employees' });
+            items.push({ path: '/admin/audit-logs', label: 'Activity Logs' }); // NEW LINK
         }
         
-        // Super Admin only links
         if (user?.role === ROLES.SUPER_ADMIN) {
             items.push({ path: '/admin/announcements', label: 'Manage Announcements' }); 
         }
@@ -43,8 +38,6 @@ const Sidebar = ({ closeMobileMenu }) => {
 
     return (
         <div className="w-[260px] bg-white border-r border-prime-border flex flex-col h-full z-20 flex-shrink-0">
-            
-            {/* Mobile Header (Hidden on Desktop) */}
             <div className="lg:hidden flex items-center justify-between p-4 border-b border-prime-border flex-shrink-0">
                 <span className="font-bold text-prime-primary tracking-wide">MENU</span>
                 <button onClick={closeMobileMenu} className="text-prime-muted hover:text-red-500">
@@ -53,8 +46,6 @@ const Sidebar = ({ closeMobileMenu }) => {
                     </svg>
                 </button>
             </div>
-
-            {/* Navigation Links */}
             <nav className="flex-1 px-4 py-6 overflow-y-auto space-y-1">
                 {getNavItems().map((item) => (
                     <NavLink

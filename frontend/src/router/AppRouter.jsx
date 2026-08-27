@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import ProtectedRoute from './ProtectedRoute';
 import PageWrapper from '../components/layout/PageWrapper';
 
-// --- Page Imports ---
 import Login from '../pages/auth/Login';
 import EmployeeDashboard from '../pages/employee/Dashboard';
 import CallLogUpload from '../pages/admin/CallLogUpload';
@@ -20,6 +19,7 @@ import LeaveRequest from '../pages/employee/LeaveRequest';
 import LeaveManagement from '../pages/admin/LeaveManagement';
 import OfficeSettings from '../pages/admin/OfficeSettings';
 import TerminatedEmployees from '../pages/admin/TerminatedEmployees';
+import AuditLogs from '../pages/admin/AuditLogs'; // NEW IMPORT
 
 const AppRouter = () => {
     return (
@@ -29,7 +29,6 @@ const AppRouter = () => {
             <Route path="/login" element={<PageWrapper title="Sign In"><Login /></PageWrapper>} />
             <Route path="/forgot-password" element={<PageWrapper title="Recover Account"><ForgotPassword /></PageWrapper>} />
 
-            {/* Dashboard & User Settings - ADDED 'closer' TO ALLOWED ROLES */}
             <Route element={<ProtectedRoute allowedRoles={['employee', 'closer', 'admin', 'super_admin']} />}>
                 <Route path="/dashboard" element={<PageWrapper title="Dashboard"><EmployeeDashboard /></PageWrapper>} />
                 <Route path="/attendance" element={<PageWrapper title="My Attendance"><Attendance /></PageWrapper>} />
@@ -38,7 +37,6 @@ const AppRouter = () => {
                 <Route path="/change-password" element={<PageWrapper title="Change Password"><ChangePassword /></PageWrapper>} />
             </Route>
 
-            {/* Admin & Super Admin Routes */}
             <Route element={<ProtectedRoute allowedRoles={['admin', 'super_admin']} />}>
                 <Route path="/admin/dashboard" element={<PageWrapper title="Admin Dashboard"><AdminDashboard /></PageWrapper>} />
                 <Route path="/admin/calls/upload" element={<PageWrapper title="Log Call"><CallLogUpload /></PageWrapper>} />
@@ -47,17 +45,15 @@ const AppRouter = () => {
                 <Route path="/admin/commissions" element={<PageWrapper title="Commissions"><CommissionManagement /></PageWrapper>} />
                 <Route path="/admin/users" element={<PageWrapper title="Manage Users"><UserManagement /></PageWrapper>} />
                 <Route path="/admin/leaves" element={<PageWrapper title="Manage Leaves"><LeaveManagement /></PageWrapper>} />
-                <Route path="/admin/announcements" element={<PageWrapper title="System Broadcasts"><AnnouncementManagement /></PageWrapper>} />
                 <Route path="/admin/office-settings" element={<PageWrapper title="Office Settings"><OfficeSettings /></PageWrapper>} />
                 <Route path="/admin/terminated-employees" element={<PageWrapper title="Terminated Employees"><TerminatedEmployees /></PageWrapper>} />
+                <Route path="/admin/audit-logs" element={<PageWrapper title="Audit Logs"><AuditLogs /></PageWrapper>} /> {/* NEW ROUTE */}
             </Route>
             
-            {/* STRICT: Super Admin ONLY Routes */}
             <Route element={<ProtectedRoute allowedRoles={['super_admin']} />}>
                 <Route path="/admin/announcements" element={<PageWrapper title="System Broadcasts"><AnnouncementManagement /></PageWrapper>} />
             </Route>
 
-            {/* SUPER CUSTOM 404 PAGE */}
             <Route path="*" element={
                 <PageWrapper title="Page Not Found">
                     <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">

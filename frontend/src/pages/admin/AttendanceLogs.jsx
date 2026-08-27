@@ -222,11 +222,74 @@ const AttendanceLogs = () => {
         }
     }
 
+    const handleExportCSV = () => {
+    if (displayData.length === 0) {
+        setStatusMessage({ type: 'error', text: 'No data available to export.' });
+        return;
+    }
+
+    // 1. Define CSV headers
+    const headers = ['Date', 'Employee Name', 'Role', 'Check In', 'Check Out', 'Total Time', 'Status'];
+
+    // 2. Map the displayData to match headers
+    const csvRows = displayData.map(({ employee, log, recordDate }) => {
+        const dateStr = recordDate || new Date().toISOString().split('T')[0];
+        const empName = employee?.full_name || 'N/A';
+        const role = employee?.role || 'N/A';
+        
+        let checkInStr = '-';
+        let checkOutStr = '-';
+        let totalTimeStr = '-';
+        let statusStr = 'Not Checked In';
+
+        if (log) {
+            checkInStr = log.check_in ? new Date(log.check_in).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) : '-';
+            checkOutStr = log.check_out ? new Date(log.check_out).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) : '-';
+            statusStr = log.status;
+            
+            // Re-use your time calculation logic here if needed, or pull from existing state
+            const timeObj = calculateTimeSpent(log.check_in ? new Date(log.check_in) : null, log.check_out ? new Date(log.check_out) : null, log.status);
+            totalTimeStr = timeObj.text;
+        }
+
+        // Escape quotes and commas for safe CSV formatting
+        return [
+            `"${dateStr}"`, 
+            `"${empName}"`, 
+            `"${role}"`, 
+            `"${checkInStr}"`, 
+            `"${checkOutStr}"`, 
+            `"${totalTimeStr}"`, 
+            `"${statusStr}"`
+        ].join(',');
+    });
+
+    // 3. Combine headers and rows
+    const csvContent = [headers.join(','), ...csvRows].join('\n');
+
+    // 4. Create a Blob and trigger the download
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Attendance_Export_${selectedDate || 'All'}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
     return (
         <PageWrapper title="Attendance Auditing">
             <div className="flex justify-between items-center mb-8 px-2">
-                <h1 className="text-2xl font-bold text-prime-text">Attendance Logs</h1>
-            </div>
+    <h1 className="text-2xl font-bold text-prime-text">Attendance Logs</h1>
+    <button 
+        onClick={handleExportCSV} 
+        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
+    >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+        Export CSV
+    </button>
+</div>
 
             {statusMessage && (
                 <div className={`px-6 py-3 mb-6 rounded-full text-sm font-medium text-center ${statusMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>

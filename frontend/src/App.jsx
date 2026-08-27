@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { BrowserRouter as Router } from 'react-router-dom';
+import { BrowserRouter as Router, useLocation } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import AppRouter from './router/AppRouter';
 import Sidebar from './components/layout/Sidebar';
@@ -8,6 +8,7 @@ import Navbar from './components/layout/Navbar';
 function MainLayout() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const [showIdleWarning, setShowIdleWarning] = useState(false);
+    const location = useLocation();
     
     const timeoutRef = useRef(null);
     const logoutRef = useRef(null);
@@ -52,6 +53,18 @@ function MainLayout() {
         setShowIdleWarning(false);
         resetIdleTimer();
     };
+
+    // Determine if the current route is an authentication page
+    const isAuthPage = ['/', '/login', '/forgot-password'].includes(location.pathname);
+
+    // If it is an auth page, render strictly the router without the navigation layout
+    if (isAuthPage) {
+        return (
+            <div className="min-h-screen bg-prime-bg text-prime-text">
+                <AppRouter />
+            </div>
+        );
+    }
 
     return (
         <div className="flex min-h-screen bg-prime-bg text-prime-text">

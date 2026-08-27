@@ -121,22 +121,17 @@ const Navbar = ({ toggleMobileMenu }) => {
         let interval;
         if (shiftStatus === 'checked_in' && checkInTime) {
             interval = setInterval(() => {
-                const diff = (new Date() - new Date(checkInTime)) / 1000;
+                // Ensure JS correctly interprets the database timestamp as UTC
+                const safeCheckIn = checkInTime.endsWith('Z') || checkInTime.includes('+') 
+                    ? checkInTime 
+                    : checkInTime + 'Z';
                 
-                // 60 for 1-minute test mode (Change to 32400 for 9 hours in production)
-                if (diff >= 32400) {
-                    setElapsedTime(32400); // Lock visual timer
-                    setShiftStatus('checked_out'); // Instantly update UI
-                    setCheckInTime(null);
-                    clearInterval(interval); // Stop the clock
-                    
-                    // NEW: Silently tell the backend to update the database right now!
-                    apiClient.post('/api/v1/attendance/check-out')
-                        .catch(err => console.error("Auto-checkout DB update failed:", err));
-                        
-                } else {
-                    setElapsedTime(diff);
-                }
+                let diff = (new Date() - new Date(safeCheckIn)) / 1000;
+                
+                // Prevent negative numbers from timezone desyncs
+                if (diff < 0) diff = 0;
+                
+                setElapsedTime(diff);
             }, 1000);
         }
         return () => clearInterval(interval);
@@ -152,6 +147,9 @@ const Navbar = ({ toggleMobileMenu }) => {
                 setCheckInTime(response.data.check_in_time || new Date().toISOString());
                 setElapsedTime(0);
                 setConfirmAction({ isOpen: false, type: null });
+                
+                // NEW: Broadcast to the app instantly!
+                window.dispatchEvent(new Event('shift-started-event'));
             }
         } catch (error) {
             setErrorMsg('Failed to communicate with timesheet servers.');

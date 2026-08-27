@@ -1,12 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
-import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
+import { supabase } from '../../services/supabaseClient';
 
 const Attendance = () => {
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [dateFilter, setDateFilter] = useState(''); 
+    
+    // NEW: Live clock to keep active shift timers ticking
+    const [now, setNow] = useState(new Date());
+
+    useEffect(() => {
+        const interval = setInterval(() => setNow(new Date()), 60000); // Ticks every 60 seconds
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         const fetchMyHistory = async () => {
@@ -21,29 +29,26 @@ const Attendance = () => {
         };
         fetchMyHistory();
 
-        // 2. Add real-time listener for the employee's personal attendance records
+        // INSTANT SYNC: Refresh the table instantly when Navbar buttons are clicked
+        window.addEventListener('shift-started-event', fetchMyHistory);
+        window.addEventListener('shift-ended-event', fetchMyHistory);
+
         const myAttendanceChannel = supabase
             .channel('employee-my-attendance')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'attendance' },
                 (payload) => {
-                    console.log('Live Employee Attendance Update:', payload);
-
-                    // 3. Update ONLY the specific row that changed in the employee's state array
                     setLogs((prevLogs) => {
                         if (payload.eventType === 'INSERT') {
-                            // If a new check-in row is added
                             return [payload.new, ...prevLogs];
                         } 
                         else if (payload.eventType === 'UPDATE') {
-                            // If status or checkout changes (e.g., admin approved or shift ended)
                             return prevLogs.map((log) => 
                                 log.id === payload.new.id ? payload.new : log
                             );
                         } 
                         else if (payload.eventType === 'DELETE') {
-                            // If a record is deleted
                             return prevLogs.filter((log) => log.id !== payload.old.id);
                         }
                         return prevLogs;
@@ -52,22 +57,32 @@ const Attendance = () => {
             )
             .subscribe();
 
-        // 4. Cleanup connection when unmounting
         return () => {
+            window.removeEventListener('shift-started-event', fetchMyHistory);
+            window.removeEventListener('shift-ended-event', fetchMyHistory);
             supabase.removeChannel(myAttendanceChannel);
         };
     }, []);
 
-    const calculateTimeSpent = (checkIn, checkOut) => {
-        if (!checkIn || !checkOut) return { text: '-', mins: 0 };
-        const diffMs = new Date(checkOut) - new Date(checkIn);
+    // FIXED: Uses the live 'now' clock for active shifts to count up dynamically
+    const calculateTimeSpent = (checkIn, checkOut, status) => {
+        if (!checkIn) return { text: '-', mins: 0 };
+        
+        const isCurrentlyActive = status === 'checked_in';
+        const endTime = isCurrentlyActive ? now : (checkOut ? new Date(checkOut) : now);
+        
+        if (!endTime || isNaN(endTime)) return { text: '-', mins: 0 };
+        
+        let diffMs = endTime - new Date(checkIn);
+        if (diffMs < 0) diffMs = 0; // Prevent negative math
+
         const diffMins = Math.floor(diffMs / 60000);
         const hrs = Math.floor(diffMins / 60);
         const mins = diffMins % 60;
+        
         return { text: `${hrs}h ${mins}m`, mins: diffMins };
     };
 
-    // NEW: Filter logs based on selected date
     const filteredLogs = dateFilter 
         ? logs.filter(log => log.date === dateFilter) 
         : logs;
@@ -81,7 +96,6 @@ const Attendance = () => {
                         <p className="text-sm font-medium text-prime-muted">Review your shift history below.</p>
                     </div>
                     
-                    {/* NEW: Date Filter Input */}
                     <div className="flex items-center gap-2">
                         <label className="text-sm font-semibold text-prime-muted">Filter by Date:</label>
                         <input 
@@ -133,10 +147,14 @@ const Attendance = () => {
                                     </tr>
                                 ) : (
                                     filteredLogs.map((log) => {
-                                        const cIn = log.check_in ? new Date(log.check_in) : null;
-                                        const cOut = log.check_out ? new Date(log.check_out) : null;
-                                        const timeObj = calculateTimeSpent(cIn, cOut);
                                         const isCheckedIn = log.status === 'checked_in';
+                                        
+                                        const cIn = log.check_in ? new Date(log.check_in) : null;
+                                        
+                                        // FIXED: Force checkOut to null if shift is active, blocking any ghost timestamps
+                                        const cOut = (log.check_out && !isCheckedIn) ? new Date(log.check_out) : null;
+                                        
+                                        const timeObj = calculateTimeSpent(cIn, cOut, log.status);
 
                                         const displayDate = log.date 
                                             ? new Date(log.date).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' })

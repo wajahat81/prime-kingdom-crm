@@ -144,7 +144,7 @@ async def check_out(current_user: dict = Depends(get_current_active_user)):
 
 @router.get("/status")
 async def get_attendance_status(current_user: dict = Depends(get_current_active_user)):
-    """Get today's exact shift status with day-aware auto-checkout enforcement."""
+    """Get today's exact shift status."""
     try:
         today = get_pkt_today()
         current_time = datetime.now(timezone.utc)
@@ -159,29 +159,9 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
         if response.data:
             record = response.data[0]
             
-            # --- DAY-AWARE AUTO-CHECKOUT LOGIC (Date Override & Grace Mins Aware) ---
-            if record.get('status') == 'checked_in' and record.get('check_in'):
-                check_in_time = datetime.fromisoformat(record['check_in'].replace('Z', '+00:00'))
-                resolved_rules = get_shift_rules_for_date(today, check_in_time)
-                req_hours = resolved_rules.get("req_hours", 9)
-                
-                max_duration = timedelta(hours=req_hours)
-                
-                if current_time - check_in_time >= max_duration:
-                    auto_check_out_time = (check_in_time + max_duration).isoformat()
-                    
-                    supabase.table('attendance').update({
-                        'check_out': auto_check_out_time,
-                        'status': 'checked_out'
-                    }).eq('id', record['id']).execute()
-                    
-                    return {
-                        "status": "checked_out",
-                        "check_in_time": record['check_in'],
-                        "check_out_time": auto_check_out_time,
-                        "server_time": current_time.isoformat()
-                    }
-
+            # --- THE FIX: We are removing the aggressive Python auto-checkout here. ---
+            # We will rely entirely on the manual checkout or the 10-hour database cron job.
+            
             return {
                 "status": record.get('status', 'checked_out'),
                 "check_in_time": record.get('check_in'),
@@ -317,15 +297,11 @@ async def reopen_shift(
     log_id: str, 
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Admin override to reopen an accidentally closed shift."""
     try:
-        update_response = supabase.table('attendance').update({
-            'check_out': None,
-            'status': 'checked_in'
-        }).eq('id', log_id).execute()
+        # Call the raw SQL function to guarantee check_out is set to strict NULL
+        response = supabase.rpc('force_reopen_shift', {'target_log_id': log_id}).execute()
         
-        if not update_response.data:
-            raise HTTPException(status_code=404, detail="Record not found.")
-        return {"message": "Shift reopened", "data": update_response.data}
+        return {"message": "Shift forcefully reopened"}
     except Exception as e:
+        print(f"CRITICAL REOPEN ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))

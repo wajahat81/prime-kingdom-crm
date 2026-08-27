@@ -23,10 +23,10 @@ const Sidebar = ({ closeMobileMenu }) => {
 
         // Admin & Super Admin specific links
         if (user?.role === ROLES.ADMIN || user?.role === ROLES.SUPER_ADMIN) {
-            items.push({ path: '/admin/calls/manage', label: 'Call Logs' });
             items.push({ path: '/admin/attendance', label: 'Attendance' });
-            items.push({ path: '/admin/leaves', label: 'Manage Leave Requests' });
+            items.push({ path: '/admin/calls/manage', label: 'Manage Cases' });   
             items.push({ path: '/admin/users', label: 'Manage Users' }); 
+            items.push({ path: '/admin/leaves', label: 'Manage Leave Requests' });
             
             // NEW: Added Office Settings here!
             items.push({ path: '/admin/office-settings', label: 'Manage Office Timings' });

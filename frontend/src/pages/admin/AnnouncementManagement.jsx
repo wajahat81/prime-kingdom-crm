@@ -141,12 +141,12 @@ const AnnouncementManagement = () => {
                                 <textarea
                                     value={currentAnnouncement}
                                     onChange={(e) => setCurrentAnnouncement(e.target.value)}
-                                    required minLength={5} maxLength={255} rows={4}
+                                    required minLength={5} maxLength={500} rows={4}
                                     className="w-full px-5 py-4 bg-white border border-prime-border rounded-3xl text-sm text-prime-text transition-colors focus:outline-none focus:border-prime-primary resize-none"
                                 />
                                 <div className="flex justify-end items-center mt-2 px-2">
                                     <p className={`text-[11px] font-bold ${currentAnnouncement.length > 230 ? 'text-red-500' : 'text-gray-400'}`}>
-                                        {currentAnnouncement.length}/255
+                                        {currentAnnouncement.length}/500
                                     </p>
                                 </div>
                             </div>

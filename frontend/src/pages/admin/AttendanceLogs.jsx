@@ -35,23 +35,23 @@ const AttendanceLogs = () => {
     }, [selectedEmployee]);
 
     useEffect(() => {
-    const fetchUsers = async () => {
-        try {
-            const response = await apiClient.get('/api/v1/users/');
-            const allUsers = response.data.data || response.data || [];
-            
-            const filteredUsers = allUsers.filter(u => u.role === 'employee' || u.role === 'closer' || u.role === 'admin');
-            
-            // Sort employees alphabetically by full name
-            filteredUsers.sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
-            
-            setEmployees(filteredUsers);
-        } catch (error) {
-            console.error('Failed to fetch users:', error);
-        }
-    };
-    fetchUsers();
-}, []);
+        const fetchUsers = async () => {
+            try {
+                const response = await apiClient.get('/api/v1/users/');
+                const allUsers = response.data.data || response.data || [];
+                
+                const filteredUsers = allUsers.filter(u => u.role === 'employee' || u.role === 'closer' || u.role === 'admin');
+                
+                // Sort employees alphabetically by full name
+                filteredUsers.sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
+                
+                setEmployees(filteredUsers);
+            } catch (error) {
+                console.error('Failed to fetch users:', error);
+            }
+        };
+        fetchUsers();
+    }, []);
 
     useEffect(() => {
         const fetchSettings = async () => {
@@ -124,7 +124,7 @@ const AttendanceLogs = () => {
         return () => {
             supabase.removeChannel(attendanceChannel);
         };
-    }, []); // REMOVED dependencies!
+    }, []); 
 
     useEffect(() => {
         if (selectedEmployee === 'all' && !selectedDate) return; 
@@ -138,7 +138,7 @@ const AttendanceLogs = () => {
             await apiClient.put(`/api/v1/attendance/${logId}/status`, { status: actionType });
             setStatusMessage({ type: 'success', text: `Timesheet securely ${actionType}.` });
             
-            // FIXED: Update ONLY this specific row in local state
+            // Update ONLY this specific row in local state
             setAttendanceLogs(prevLogs => prevLogs.map(item => 
                 item.id === logId 
                     ? { ...item, status: actionType } 
@@ -150,16 +150,18 @@ const AttendanceLogs = () => {
         }
     };
 
-    // FIXED: Now calculates live time if the shift is active
     const calculateTimeSpent = (checkIn, checkOut, status) => {
         if (!checkIn) return { text: '-', mins: 0 };
         
-        // If they are active and have no checkout time, use the live 'now' clock!
-        const endTime = (status === 'checked_in' && !checkOut) ? now : new Date(checkOut);
+        // ULTIMATE FAILSAFE: If the status is checked_in, completely ignore any ghost checkout times from the DB
+        const isCurrentlyActive = status === 'checked_in';
+        const endTime = isCurrentlyActive ? now : (checkOut ? new Date(checkOut) : now);
         
         if (!endTime || isNaN(endTime)) return { text: '-', mins: 0 };
         
-        const diffMs = endTime - new Date(checkIn);
+        let diffMs = endTime - new Date(checkIn);
+        if (diffMs < 0) diffMs = 0;
+
         const diffMins = Math.floor(diffMs / 60000);
         const hrs = Math.floor(diffMins / 60);
         const mins = diffMins % 60;
@@ -168,16 +170,16 @@ const AttendanceLogs = () => {
     };
 
     let displayData = [];
-if (selectedEmployee === 'all') {
-    const targetDate = selectedDate || getLocalDateStr();
-    displayData = employees.map(emp => {
-        const log = attendanceLogs.find(l => l.employee_id === emp.id);
-        return { uniqueKey: emp.id, employee: emp, log: log || null, recordDate: targetDate };
-    });
-    
-    // Sort displayData alphabetically by employee name
-    displayData.sort((a, b) => (a.employee.full_name || '').localeCompare(b.employee.full_name || ''));
-} else {
+    if (selectedEmployee === 'all') {
+        const targetDate = selectedDate || getLocalDateStr();
+        displayData = employees.map(emp => {
+            const log = attendanceLogs.find(l => l.employee_id === emp.id);
+            return { uniqueKey: emp.id, employee: emp, log: log || null, recordDate: targetDate };
+        });
+        
+        // Sort displayData alphabetically by employee name
+        displayData.sort((a, b) => (a.employee.full_name || '').localeCompare(b.employee.full_name || ''));
+    } else {
         const emp = employees.find(e => e.id === selectedEmployee);
         const filteredLogs = selectedDate ? attendanceLogs.filter(l => l.date === selectedDate) : attendanceLogs;
         
@@ -267,13 +269,14 @@ if (selectedEmployee === 'all') {
                                         );
                                     }
 
-                                    const cIn = log.check_in ? new Date(log.check_in) : null;
-                                    const cOut = log.check_out ? new Date(log.check_out) : null;
-                                    
-                                    // FIXED: Pass log.status to the calculation function
-                                    const timeObj = calculateTimeSpent(cIn, cOut, log.status);
-                                    
                                     const isCheckedIn = log.status === 'checked_in';
+
+                                    const cIn = log.check_in ? new Date(log.check_in) : null;
+                                    
+                                    // FIXED REOPEN BUG: Force cOut to be strictly null if the shift is currently active, ignoring old DB timestamps
+                                    const cOut = (log.check_out && !isCheckedIn) ? new Date(log.check_out) : null;
+                                    
+                                    const timeObj = calculateTimeSpent(cIn, cOut, log.status);
 
                                     // Dynamic Late Calculation (Check-in rules)
                                     const rules = officeSettings || {
@@ -360,29 +363,29 @@ if (selectedEmployee === 'all') {
                                                         </>
                                                     )}
                                                     
-                                                    {/* NEW: Reopen Button for prematurely closed shifts */}
+                                                    {/* Reopen Button for prematurely closed shifts */}
                                                     {log.status === 'checked_out' && (
-                                                        <button 
-                                                            onClick={async () => {
-                                                                try {
-                                                                    await apiClient.put(`/api/v1/attendance/${log.id}/reopen`);
-                                                                    
-                                                                    // FIXED: Update ONLY this specific row in local state
-                                                                    setAttendanceLogs(prevLogs => prevLogs.map(item => 
-                                                                        item.id === log.id 
-                                                                            ? { ...item, check_out: null, status: 'checked_in' } 
-                                                                            : item
-                                                                    ));
-                                                                    
-                                                                } catch (error) {
-                                                                    console.error("Failed to reopen shift", error);
-                                                                }
-                                                            }} 
-                                                            className="text-blue-600 hover:text-blue-800 text-xs font-bold uppercase ml-2"
-                                                        >
-                                                            Reopen
-                                                        </button>
-                                                    )}
+                                                    <button 
+                                                    onClick={async () => {
+                                                        try {
+                                                            // Hit the specific FastAPI reopen route
+                                                            await apiClient.put(`/api/v1/attendance/${log.id}/reopen`);
+                                                            
+                                                            // Instantly update the Admin UI
+                                                            setAttendanceLogs(prevLogs => prevLogs.map(item => 
+                                                                item.id === log.id 
+                                                                    ? { ...item, check_out: null, status: 'checked_in' } 
+                                                                    : item
+                                                            ));
+                                                        } catch (error) {
+                                                            console.error("Failed to reopen shift", error);
+                                                        }
+                                                    }} 
+                                                    className="text-blue-600 hover:text-blue-800 text-xs font-bold uppercase ml-2"
+                                                >
+                                                    Reopen
+                                                </button>
+                                            )}
                                                 </div>
                                             </td>
                                         </tr>

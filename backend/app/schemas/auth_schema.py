@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import date
 
 class Token(BaseModel):
@@ -13,8 +13,13 @@ class UserCreate(BaseModel):
     password: str
     full_name: str
     role: str = "employee"
-    dialing_id: str = None
-    joining_date: date = None
+    dialing_id: Optional[str] = None
+    joining_date: Optional[date] = None
+    @field_validator('joining_date', mode='before')
+    def empty_str_to_none(cls, value):
+        if value == "" or value is None:
+            return None
+        return value
 
 class UserLogin(BaseModel):
     email: str

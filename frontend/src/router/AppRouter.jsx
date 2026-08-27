@@ -19,6 +19,7 @@ import ChangePassword from '../pages/auth/ChangePassword';
 import LeaveRequest from '../pages/employee/LeaveRequest';
 import LeaveManagement from '../pages/admin/LeaveManagement';
 import OfficeSettings from '../pages/admin/OfficeSettings';
+import TerminatedEmployees from '../pages/admin/TerminatedEmployees';
 
 const AppRouter = () => {
     return (
@@ -48,6 +49,7 @@ const AppRouter = () => {
                 <Route path="/admin/leaves" element={<PageWrapper title="Manage Leaves"><LeaveManagement /></PageWrapper>} />
                 <Route path="/admin/announcements" element={<PageWrapper title="System Broadcasts"><AnnouncementManagement /></PageWrapper>} />
                 <Route path="/admin/office-settings" element={<PageWrapper title="Office Settings"><OfficeSettings /></PageWrapper>} />
+                <Route path="/admin/terminated-employees" element={<PageWrapper title="Terminated Employees"><TerminatedEmployees /></PageWrapper>} />
             </Route>
             
             {/* STRICT: Super Admin ONLY Routes */}

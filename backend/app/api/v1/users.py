@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from app.db.session import supabase
 from app.core.permissions import require_role
@@ -8,29 +8,76 @@ import uuid
 
 router = APIRouter()
 
-# FIXED: Changed email to Optional[str] and added joining_date
 class ProfileFullAdminUpdateInternal(BaseModel):
     email: Optional[str] = None
+    cnic: Optional[str] = None
     full_name: str
     password: Optional[str] = None
     role: str
     dialing_id: Optional[str] = None
     joining_date: Optional[str] = None 
+    @field_validator('joining_date', mode='before')
+    def empty_str_to_none(cls, value):
+        if value == "" or value is None:
+            return None
+        return value
 
 @router.get("/")
 async def get_users(
     role: str = None,
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Get all users, optionally filtered by role."""
+    """Get all active users, optionally filtered by role."""
     try:
-        # FIXED: Added joining_date to the select query so the frontend can display it
-        query = supabase.table('profiles').select('id, email, full_name, role, dialing_id, joining_date, created_at')
+        # Query profiles table, ensuring we only fetch active users (or those without the flag yet)
+        query = supabase.table('profiles').select('id, email, full_name, role, dialing_id, joining_date, created_at, is_active')
+        
+        # Filter out terminated/inactive users from the main list
+        query = query.or_("is_active.is.null,is_active.eq.true")
+        
         if role:
             query = query.eq('role', role)
+            
         response = query.execute()
-        return {"data": response.data}
+        return {"data": response.data or []}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/terminated")
+async def get_terminated_users(
+    current_user: dict = Depends(require_role(["admin", "super_admin"]))
+):
+    """Fetch all archived employees where is_active is false."""
+    try:
+        response = supabase.table('profiles') \
+            .select('*') \
+            .eq('is_active', False) \
+            .execute()
+            
+        return {"data": response.data or []}
+    except Exception as e:
+        print(f"Fetch terminated users error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.put("/{profile_id}/restore")
+async def restore_user(
+    profile_id: str,
+    payload: dict,
+    current_user: dict = Depends(require_role(["admin", "super_admin"]))
+):
+    """Restore a terminated employee back to active status."""
+    try:
+        response = supabase.table('profiles') \
+            .update({
+                "is_active": True,
+                "role": payload.get("role", "employee")
+            }) \
+            .eq('id', profile_id) \
+            .execute()
+            
+        return {"message": "User successfully restored", "data": response.data}
+    except Exception as e:
+        print(f"Restore user error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{profile_id}")
@@ -41,7 +88,6 @@ async def admin_edit_user_profile(
 ):
     """Securely updates a user profile matching your exact database column names."""
     try:
-        # FIXED: Added joining_date to the payload sent to Supabase
         update_data = {
             "full_name": profile_update.full_name,
             "role": profile_update.role,
@@ -64,15 +110,14 @@ async def admin_edit_user_profile(
         raise he
     except Exception as e:
         print(f"CRITICAL EDIT USER ERROR: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-    
 @router.delete("/{profile_id}")
 async def admin_delete_user_account(
     profile_id: str,
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
-    """Securely delete a user account."""
+    """Soft-delete a user: marks is_active False, and clears dialing_id for reuse."""
     try:
         if current_user['role'] == 'admin':
              check_profile = supabase.table('profiles').select('role').eq('id', profile_id).execute()
@@ -82,17 +127,20 @@ async def admin_delete_user_account(
         if profile_id == current_user['id']:
             raise HTTPException(status_code=403, detail="You cannot delete your own active account.")
         
-        supabase.table('calls').delete().eq('employee_id', profile_id).execute()
-        supabase.table('attendance').delete().eq('employee_id', profile_id).execute()
-        supabase.table('commissions').delete().eq('employee_id', profile_id).execute()
-        
-        response = supabase.table('profiles').delete().eq('id', profile_id).execute()
+        # Soft delete: archive user AND clear dialing_id so it can be reassigned
+        response = supabase.table('profiles') \
+            .update({"is_active": False, "dialing_id": None}) \
+            .eq('id', profile_id) \
+            .execute()
+            
         if not response.data:
             raise HTTPException(status_code=404, detail="User profile not found.")
-        return {"message": "User account deleted successfully"}
+            
+        return {"message": "User successfully archived and dialing ID released"}
     except HTTPException:
         raise
     except Exception as e:
+        print(f"Soft delete error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{profile_id}/trust-device")
@@ -113,4 +161,27 @@ async def trust_device(
             
         return {"message": "Device trusted", "device_token": new_device_token}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{profile_id}/permanent")
+async def permanent_delete_user_account(
+    profile_id: str,
+    current_user: dict = Depends(require_role(["super_admin"])) # Restricted to super admin for safety
+):
+    """Permanently deletes a terminated employee record and related foreign keys."""
+    try:
+        # Clean up related records first to avoid foreign key violations
+        supabase.table('calls').delete().eq('employee_id', profile_id).execute()
+        supabase.table('attendance').delete().eq('employee_id', profile_id).execute()
+        supabase.table('commissions').delete().eq('employee_id', profile_id).execute()
+        
+        response = supabase.table('profiles').delete().eq('id', profile_id).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="User profile not found.")
+            
+        return {"message": "User permanently deleted from system"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Permanent delete error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

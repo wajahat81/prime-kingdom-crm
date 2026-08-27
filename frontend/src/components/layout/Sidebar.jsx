@@ -30,6 +30,7 @@ const Sidebar = ({ closeMobileMenu }) => {
             
             // NEW: Added Office Settings here!
             items.push({ path: '/admin/office-settings', label: 'Manage Office Timings' });
+            items.push({ path: '/admin/terminated-employees', label: 'Manage Terminated Employees' });
         }
         
         // Super Admin only links

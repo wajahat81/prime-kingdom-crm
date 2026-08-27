@@ -1,8 +1,8 @@
 import axios from 'axios';
 
 const apiClient = axios.create({
+    // 🚨 FIX: Updated to match your exact environment variable name
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
-    // 🚨 CRITICAL FIX: This tells Axios to automatically send your secure auth cookies!
     withCredentials: true, 
 });
 

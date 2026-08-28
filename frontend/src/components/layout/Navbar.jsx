@@ -6,10 +6,8 @@ import Modal from '../common/Modal';
 import { supabase } from '../../services/supabaseClient';
 
 const Navbar = ({ toggleMobileMenu }) => {
-    // Added logout to useAuth extraction
     const { user, logout } = useAuth();
     
-    // Scroll & Shift State
     const [isVisible, setIsVisible] = useState(true);
     const [lastScrollY, setLastScrollY] = useState(0);
     const [shiftStatus, setShiftStatus] = useState('not_checked_in'); 
@@ -19,12 +17,10 @@ const Navbar = ({ toggleMobileMenu }) => {
     const [confirmAction, setConfirmAction] = useState({ isOpen: false, type: null });
     const [errorMsg, setErrorMsg] = useState(null);
 
-    // Dropdown & Logout State
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
     const dropdownRef = useRef(null);
 
-    // Scroll handler
     useEffect(() => {
         const handleScroll = () => {
             const currentScrollY = window.scrollY;
@@ -36,7 +32,6 @@ const Navbar = ({ toggleMobileMenu }) => {
         return () => window.removeEventListener('scroll', handleScroll);
     }, [lastScrollY]);
 
-    // Close profile dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -47,8 +42,6 @@ const Navbar = ({ toggleMobileMenu }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Attendance fetcher
-    // Attendance fetcher & Real-time Event Listener
     useEffect(() => {
         if (!user) return;
         
@@ -66,17 +59,11 @@ const Navbar = ({ toggleMobileMenu }) => {
             }
         };
 
-        // Fetch immediately on load
         fetchAttendanceStatus();
 
-        // Listen for the custom "SHIFT_STARTED" event from the Dashboard
-        const handleShiftUpdate = () => {
-            fetchAttendanceStatus();
-        };
-        
+        const handleShiftUpdate = () => fetchAttendanceStatus();
         window.addEventListener('shift-started-event', handleShiftUpdate);
         
-        // Cleanup listener on unmount
         return () => window.removeEventListener('shift-started-event', handleShiftUpdate);
     }, [user]);
 
@@ -89,16 +76,11 @@ const Navbar = ({ toggleMobileMenu }) => {
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'attendance' },
                 (payload) => {
-                    // Check if this update belongs to the logged-in employee
                     if (payload.new && payload.new.employee_id === user.id) {
-                        console.log('Real-time shift update received:', payload.new);
-                        
                         setShiftStatus(payload.new.status);
                         
                         if (payload.new.status === 'checked_in' && payload.new.check_in) {
                             setCheckInTime(payload.new.check_in);
-                            
-                            // Instantly recalculate elapsed time from the original check-in time
                             const diff = (new Date() - new Date(payload.new.check_in)) / 1000;
                             setElapsedTime(diff > 0 ? diff : 0);
                         } else if (payload.new.status === 'checked_out') {
@@ -109,26 +91,18 @@ const Navbar = ({ toggleMobileMenu }) => {
             )
             .subscribe();
 
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => supabase.removeChannel(channel);
     }, [user]);
 
-    // Timer logic
-    // Timer logic with 9-Hour Auto-Stop Sync
-    // Timer logic with Auto-Stop and Database Sync
     useEffect(() => {
         let interval;
         if (shiftStatus === 'checked_in' && checkInTime) {
             interval = setInterval(() => {
-                // Ensure JS correctly interprets the database timestamp as UTC
                 const safeCheckIn = checkInTime.endsWith('Z') || checkInTime.includes('+') 
                     ? checkInTime 
                     : checkInTime + 'Z';
                 
                 let diff = (new Date() - new Date(safeCheckIn)) / 1000;
-                
-                // Prevent negative numbers from timezone desyncs
                 if (diff < 0) diff = 0;
                 
                 setElapsedTime(diff);
@@ -138,6 +112,7 @@ const Navbar = ({ toggleMobileMenu }) => {
     }, [shiftStatus, checkInTime]);
 
     const executeCheckIn = async () => {
+        if (isProcessing) return; // SPAM LOCK
         setIsProcessing(true);
         setErrorMsg(null);
         try {
@@ -147,34 +122,29 @@ const Navbar = ({ toggleMobileMenu }) => {
                 setCheckInTime(response.data.check_in_time || new Date().toISOString());
                 setElapsedTime(0);
                 setConfirmAction({ isOpen: false, type: null });
-                
-                // NEW: Broadcast to the app instantly!
                 window.dispatchEvent(new Event('shift-started-event'));
+            } else {
+                setErrorMsg('Database failed to register shift. Try again.');
             }
         } catch (error) {
-            setErrorMsg('Failed to communicate with timesheet servers.');
+            setErrorMsg(error.response?.data?.detail || 'Failed to communicate with timesheet servers.');
         } finally {
             setIsProcessing(false);
         }
     };
 
     const executeCheckOut = async () => {
+        if (isProcessing) return; // SPAM LOCK
         setIsProcessing(true);
         setErrorMsg(null);
         try {
-            // This hits your FastAPI endpoint, which updates Supabase
-            const response = await apiClient.post('/api/v1/attendance/check-out');
-            
+            await apiClient.post('/api/v1/attendance/check-out');
             setShiftStatus('checked_out');
             setCheckInTime(null);
             setConfirmAction({ isOpen: false, type: null });
-
-            // OPTIONAL: If you want to force an immediate custom window event 
-            // to update local widgets instantly, you can dispatch it here:
             window.dispatchEvent(new Event('shift-ended-event'));
-
         } catch (error) {
-            setErrorMsg('Failed to end shift properly.');
+            setErrorMsg(error.response?.data?.detail || 'Failed to end shift properly.');
         } finally {
             setIsProcessing(false);
         }
@@ -197,7 +167,6 @@ const Navbar = ({ toggleMobileMenu }) => {
     return (
         <header className={`bg-white min-h-[72px] py-3 border-b border-prime-border flex flex-wrap md:flex-nowrap items-center justify-between px-4 md:px-8 sticky top-0 z-30 transition-transform duration-300 ease-in-out ${isVisible ? 'translate-y-0' : '-translate-y-full'}`}>
             
-            {/* Shift Modal */}
             <Modal 
                 isOpen={confirmAction.isOpen} 
                 onClose={() => { setConfirmAction({ isOpen: false, type: null }); setErrorMsg(null); }} 
@@ -215,7 +184,6 @@ const Navbar = ({ toggleMobileMenu }) => {
                 </div>
             </Modal>
 
-            {/* Logout Modal */}
             <Modal 
                 isOpen={isLogoutModalOpen} 
                 onClose={() => setIsLogoutModalOpen(false)} 
@@ -226,12 +194,10 @@ const Navbar = ({ toggleMobileMenu }) => {
                 <p className="text-sm font-medium text-prime-muted">Are you sure you want to log out of your secure workspace?</p>
             </Modal>
 
-            {/* Left Section: Menu Toggle & Logo */}
             <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
                 <button 
                     onClick={toggleMobileMenu} 
                     className="text-prime-muted hover:text-prime-primary transition-colors focus:outline-none p-1"
-                    title="Toggle Sidebar"
                 >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
@@ -245,29 +211,38 @@ const Navbar = ({ toggleMobileMenu }) => {
                 </Link>
             </div>
             
-            {/* Right Section: Shift Buttons & User Profile */}
             <div className="flex items-center justify-end gap-3 md:space-x-8 mt-2 md:mt-0 flex-grow md:flex-grow-0">
                 
-                {/* Shift Controls */}
-                <div className="flex items-center">
-                    {shiftStatus === 'not_checked_in' && (
-                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'in' })} disabled={isProcessing} className="px-3 py-1.5 md:px-4 bg-prime-primary text-white hover:bg-prime-secondary rounded-full text-[10px] md:text-xs font-bold transition-colors whitespace-nowrap">
-                            Start Shift
-                        </button>
-                    )}
-                    {shiftStatus === 'checked_in' && (
-                        <button onClick={() => setConfirmAction({ isOpen: true, type: 'out' })} disabled={isProcessing} className="flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 bg-prime-primary/10 text-prime-primary hover:bg-red-50 hover:text-red-600 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors group whitespace-nowrap">
-                            <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-prime-primary animate-pulse group-hover:hidden"></span>
-                            <span className="group-hover:hidden">{formatTime(elapsedTime)}</span>
-                            <span className="hidden group-hover:block">End Shift</span>
-                        </button>
-                    )}
-                    {shiftStatus === 'checked_out' && (
-                        <span className="px-3 md:px-4 py-1.5 bg-gray-100 text-gray-500 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider whitespace-nowrap">Shift Complete</span>
-                    )}
+                {/* 🚨 SEPARATED SHIFT BUTTONS */}
+                <div className="flex items-center gap-2">
+                    <button 
+                        onClick={() => setConfirmAction({ isOpen: true, type: 'in' })} 
+                        disabled={isProcessing || shiftStatus !== 'not_checked_in'} 
+                        className={`px-3 py-1.5 md:px-4 rounded-full text-[10px] md:text-xs font-bold transition-colors whitespace-nowrap ${
+                            shiftStatus === 'not_checked_in' 
+                                ? 'bg-prime-primary text-white hover:bg-prime-secondary' 
+                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                    >
+                        Start Shift
+                    </button>
+
+                    <button 
+                        onClick={() => setConfirmAction({ isOpen: true, type: 'out' })} 
+                        disabled={isProcessing || shiftStatus !== 'checked_in'} 
+                        className={`flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap ${
+                            shiftStatus === 'checked_in'
+                                ? 'bg-red-50 text-red-600 hover:bg-red-100'
+                                : 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        }`}
+                    >
+                        {shiftStatus === 'checked_in' && (
+                            <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-red-600 animate-pulse"></span>
+                        )}
+                        {shiftStatus === 'checked_in' ? `End Shift (${formatTime(elapsedTime)})` : 'End Shift'}
+                    </button>
                 </div>
 
-                {/* User Profile with Dropdown */}
                 <div className="relative border-l border-gray-200 pl-3 md:pl-8" ref={dropdownRef}>
                     <button 
                         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -282,10 +257,8 @@ const Navbar = ({ toggleMobileMenu }) => {
                         </div>
                     </button>
 
-                    {/* Dropdown Menu */}
                     {isDropdownOpen && (
                         <div className="absolute right-0 mt-2 w-48 bg-white border border-prime-border rounded-xl shadow-lg py-1.5 z-50">
-                            {/* Change Password Link */}
                             <Link
                                 to="/change-password"
                                 onClick={() => setIsDropdownOpen(false)}
@@ -297,7 +270,6 @@ const Navbar = ({ toggleMobileMenu }) => {
                                 Change Password
                             </Link>
 
-                            {/* Sign Out Button */}
                             <button
                                 onClick={() => {
                                     setIsDropdownOpen(false);

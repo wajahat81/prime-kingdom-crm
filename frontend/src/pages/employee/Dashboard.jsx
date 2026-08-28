@@ -84,6 +84,7 @@ const Dashboard = () => {
     const [isStartingShift, setIsStartingShift] = useState(false);
 
     const [allTimeFilter, setAllTimeFilter] = useState('all');
+    const [shiftError, setShiftError] = useState(null);
 
     useEffect(() => {
         const checkShiftStatus = async () => {
@@ -103,12 +104,21 @@ const Dashboard = () => {
     }, [user]);
 
     const handleStartShift = async () => {
+        if (isStartingShift) return; // SPAM LOCK
         setIsStartingShift(true);
+        setShiftError(null);
         try {
-            await apiClient.post('/api/v1/attendance/check-in');
-            setNeedsToStartShift(false);
-            window.dispatchEvent(new Event('shift-started-event'));
+            const response = await apiClient.post('/api/v1/attendance/check-in');
+            
+            // Explicitly verify the DB returned a successful check-in
+            if (response.data?.status === 'checked_in') {
+                setNeedsToStartShift(false);
+                window.dispatchEvent(new Event('shift-started-event'));
+            } else {
+                setShiftError("Failed to store attendance in database. Please try again.");
+            }
         } catch (err) {
+            setShiftError(err.response?.data?.detail || "Connection error. Please try again.");
             console.error("Failed to start shift", err);
         } finally {
             setIsStartingShift(false);
@@ -297,28 +307,35 @@ const Dashboard = () => {
             <AnnouncementBanner />
             {isAdminOrSuper && <PendingLeaveAlert />}
             {needsToStartShift && createPortal(
-                <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in">
-                    <div className="bg-white rounded-3xl shadow-card max-w-sm w-full p-8 text-center border border-prime-border transform transition-all">
-                        <div className="w-16 h-16 bg-prime-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <svg className="w-8 h-8 text-prime-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </div>
-                        <h2 className="text-xl font-bold text-prime-text mb-2 tracking-tight">Shift Not Started</h2>
-                        <p className="text-prime-muted text-sm mb-8 font-medium px-2">
-                            Kindly start your shift for today to unlock your workspace.
-                        </p>
-                        <button
-                            onClick={handleStartShift}
-                            disabled={isStartingShift}
-                            className="w-full py-3.5 px-4 bg-prime-primary text-white rounded-full font-bold hover:bg-prime-secondary transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                            {isStartingShift ? 'Starting...' : 'OK'}
-                        </button>
+        <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in">
+            <div className="bg-white rounded-3xl shadow-card max-w-sm w-full p-8 text-center border border-prime-border transform transition-all">
+                <div className="w-16 h-16 bg-prime-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <svg className="w-8 h-8 text-prime-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <h2 className="text-xl font-bold text-prime-text mb-2 tracking-tight">Shift Not Started</h2>
+                <p className="text-prime-muted text-sm mb-4 font-medium px-2">
+                    Kindly start your shift for today to unlock your workspace.
+                </p>
+                
+                {shiftError && (
+                    <div className="mb-6 bg-red-50 text-red-600 px-4 py-2 rounded-lg text-xs font-semibold text-center border border-red-100">
+                        {shiftError}
                     </div>
-                </div>,
-                document.body
-            )}
+                )}
+
+                <button
+                    onClick={handleStartShift}
+                    disabled={isStartingShift}
+                    className="w-full py-3.5 px-4 bg-prime-primary text-white rounded-full font-bold hover:bg-prime-secondary transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                    {isStartingShift ? 'Connecting...' : 'Start My Shift'}
+                </button>
+            </div>
+        </div>,
+        document.body
+    )}
 
             <div className="w-full pt-4">
                 {error && <div className="mb-8 bg-red-50 text-red-600 px-6 py-3 rounded-full text-sm font-medium text-center">{error}</div>}

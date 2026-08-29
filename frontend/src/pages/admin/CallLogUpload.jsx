@@ -14,7 +14,7 @@ const CallLogUpload = () => {
         closer_id: '',
         doc_sign_id: ''
     });
-    
+
     const [agents, setAgents] = useState([]);
     const [closers, setClosers] = useState([]);
     const [loadingEmployees, setLoadingEmployees] = useState(true);
@@ -27,12 +27,10 @@ const CallLogUpload = () => {
             try {
                 const response = await apiClient.get('/api/v1/users/');
                 const data = response.data.data || response.data || [];
-                
+
                 const sortByName = (a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '');
 
                 const sortedAgents = data.filter(u => u.role === 'employee' || u.role === 'closer').sort(sortByName);
-                
-                // Ensure closers are explicitly sorted alphabetically here too
                 const sortedClosers = data.filter(u => u.role === 'closer').sort(sortByName);
 
                 setAgents(sortedAgents);
@@ -68,9 +66,8 @@ const CallLogUpload = () => {
                 doc_sign_id: formData.doc_sign_id || null
             });
             setStatusMessage({ type: 'success', text: 'Call logged successfully.' });
-            
-            // Reset form
-            setFormData({ 
+
+            setFormData({
                 client_name: '', employee_id: '', status: 'retained', commission: '', handy_id: '', closer_id: '', doc_sign_id: ''
             });
         } catch (error) {
@@ -91,9 +88,9 @@ const CallLogUpload = () => {
 
     return (
         <PageWrapper title="Log Call">
-            <Modal 
-                isOpen={confirmDialog} 
-                onClose={() => setConfirmDialog(false)} 
+            <Modal
+                isOpen={confirmDialog}
+                onClose={() => setConfirmDialog(false)}
                 title="Save Call Log"
                 onConfirm={confirmSubmit}
                 confirmText="Proceed"
@@ -106,7 +103,7 @@ const CallLogUpload = () => {
                     <h2 className="text-2xl font-bold text-prime-text tracking-tight mb-2">Log New Interaction</h2>
                     <p className="text-sm font-medium text-prime-muted">Record a client call securely into the CRM.</p>
                 </div>
-                
+
                 {statusMessage && (
                     <div className={`px-6 py-3 mb-8 rounded-full text-sm font-medium text-center ${statusMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                         {statusMessage.text}
@@ -132,14 +129,19 @@ const CallLogUpload = () => {
                             <input type="text" name="client_name" value={formData.client_name} onChange={handleChange} required minLength={2} className="input-base" />
                         </div>
 
-                        
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Status</label>
+                            <select name="status" value={formData.status} onChange={handleChange} className="input-base cursor-pointer">
+                                <option value="retained">Retained</option>
+                                <option value="clawed_back">Clawed Back</option>
+                            </select>
+                        </div>
 
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Commission (Rs)</label>
                             <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} className="input-base" />
                         </div>
 
-                        {/* NEW SPLIT FIELDS */}
                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
                             <div>
                                 <label className="block text-xs font-semibold text-prime-primary uppercase tracking-wider mb-2 ml-2">Handy</label>

@@ -4,22 +4,22 @@ import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import PageWrapper from '../../components/layout/PageWrapper';
 import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 
 const CallManagement = () => {
+    const { user } = useAuth();
     const [calls, setCalls] = useState([]);
-    
     const [agents, setAgents] = useState([]);
     const [closers, setClosers] = useState([]);
-    
+
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
-    
+
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [modalMode, setModalMode] = useState('add'); 
+    const [modalMode, setModalMode] = useState('add');
     const [currentCallId, setCurrentCallId] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-
     const [confirmDeleteDialog, setConfirmDeleteDialog] = useState({ isOpen: false, callId: null });
 
     const [formData, setFormData] = useState({
@@ -35,13 +35,13 @@ const CallManagement = () => {
                 apiClient.get('/api/v1/users/')
             ]);
             setCalls(callsRes.data.data || []);
-            
+
             const staff = (usersRes.data.data || usersRes.data || []);
             const sortByName = (a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '');
 
             setAgents(staff.filter(u => u.role === 'employee' || u.role === 'closer').sort(sortByName));
             setClosers(staff.filter(u => u.role === 'closer').sort(sortByName));
-            
+
             setError(null);
         } catch (err) {
             setError('Failed to load data.');
@@ -50,8 +50,8 @@ const CallManagement = () => {
         }
     };
 
-    useEffect(() => { 
-        fetchCallsAndUsers(); 
+    useEffect(() => {
+        fetchCallsAndUsers();
 
         const callsChannel = supabase
             .channel('call-management-live')
@@ -72,14 +72,21 @@ const CallManagement = () => {
         return () => supabase.removeChannel(callsChannel);
     }, []);
 
-    const filteredCalls = calls.filter(call => {
+    const displayCalls = calls.map(call => {
+        if (user?.role === 'employee' && call.status === 'clawed_back') {
+            return { ...call, status: 'retained' };
+        }
+        return call;
+    });
+
+    const filteredCalls = displayCalls.filter(call => {
         if (statusFilter === 'all') return true;
         return call.status === statusFilter;
     });
 
     const handleOpenAdd = () => {
         setModalMode('add');
-        setFormData({ 
+        setFormData({
             client_name: '', employee_id: '', status: 'retained', commission: '',
             handy_id: '', closer_id: '', doc_sign_id: ''
         });
@@ -108,7 +115,7 @@ const CallManagement = () => {
         try {
             const payload = {
                 ...formData,
-                commission: formData.status === 'retained' ? (parseFloat(formData.commission) || 0) : 0,
+                commission: parseFloat(formData.commission) || 0,
                 handy_id: formData.handy_id || null,
                 closer_id: formData.closer_id || null,
                 doc_sign_id: formData.doc_sign_id || null
@@ -138,19 +145,13 @@ const CallManagement = () => {
     };
 
     const getEmployeeName = (call) => {
-        // 1. Works for initial page loads (Joined from backend)
         if (call.profiles && call.profiles.full_name) return call.profiles.full_name;
         if (call.employee_name) return call.employee_name;
-        
-        // 2. NEW FIX for real-time inserts: Lookup the name from the local agents state array
         if (call.employee_id) {
             const foundAgent = agents.find(a => a.id === call.employee_id);
             if (foundAgent) return foundAgent.full_name || foundAgent.email;
-            
-            // Fallback just in case
             return call.employee_id.substring(0, 8) + '...';
         }
-        
         return 'Unknown';
     };
 
@@ -160,7 +161,6 @@ const CallManagement = () => {
         return found ? (found.full_name || found.email) : 'Unknown';
     };
 
-    // --- CSV EXPORT LOGIC ---
     const handleExportCSV = () => {
         if (filteredCalls.length === 0) {
             setError('No data available to export.');
@@ -170,13 +170,13 @@ const CallManagement = () => {
         const headers = ['Client Name', 'Agent', 'Handy', 'Closer', 'Doc Sign', 'Status', 'Commission'];
         const csvRows = filteredCalls.map((call) => {
             return [
-                `"${call.client_name || 'N/A'}"`, 
-                `"${getEmployeeName(call)}"`, 
-                `"${getCloserName(call.handy_id) || '-'}"`, 
-                `"${getCloserName(call.closer_id) || '-'}"`, 
-                `"${getCloserName(call.doc_sign_id) || '-'}"`, 
-                `"${call.status}"`, 
-                `"${call.status === 'retained' ? call.commission : 0}"`
+                `"${call.client_name || 'N/A'}"`,
+                `"${getEmployeeName(call)}"`,
+                `"${getCloserName(call.handy_id) || '-'}"`,
+                `"${getCloserName(call.closer_id) || '-'}"`,
+                `"${getCloserName(call.doc_sign_id) || '-'}"`,
+                `"${call.status}"`,
+                `"${call.commission || 0}"`
             ].join(',');
         });
 
@@ -184,10 +184,10 @@ const CallManagement = () => {
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        
+
         link.setAttribute('href', url);
         link.setAttribute('download', `Call_Logs_Export_${new Date().toISOString().split('T')[0]}.csv`);
-        
+
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -195,9 +195,9 @@ const CallManagement = () => {
 
     return (
         <PageWrapper title="Call Logs">
-            <Modal 
-                isOpen={confirmDeleteDialog.isOpen} 
-                onClose={() => setConfirmDeleteDialog({ isOpen: false, callId: null })} 
+            <Modal
+                isOpen={confirmDeleteDialog.isOpen}
+                onClose={() => setConfirmDeleteDialog({ isOpen: false, callId: null })}
                 title="Delete Call Log"
                 onConfirm={executeDelete}
                 confirmText="Delete"
@@ -205,9 +205,9 @@ const CallManagement = () => {
                 <p className="text-sm font-medium text-prime-muted">Are you sure you want to permanently delete this call log?</p>
             </Modal>
 
-            <Modal 
-                isOpen={isModalOpen} 
-                onClose={() => setIsModalOpen(false)} 
+            <Modal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
                 title={modalMode === 'add' ? "Add Call Log" : "Edit Call Log"}
                 onConfirm={handleSubmit}
                 confirmText={isSubmitting ? "Saving..." : "Save"}
@@ -221,22 +221,23 @@ const CallManagement = () => {
                                 {agents.map(u => <option key={u.id} value={u.id}>{u.full_name || u.email}</option>)}
                             </select>
                         </div>
-                        
+
                         <div className="md:col-span-2">
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Client Name</label>
                             <input type="text" name="client_name" value={formData.client_name} onChange={handleChange} required className="input-base" />
                         </div>
-                        
+
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Status</label>
                             <select name="status" value={formData.status} onChange={handleChange} className="input-base cursor-pointer">
                                 <option value="retained">Retained</option>
+                                <option value="clawed_back">Clawed Back</option>
                             </select>
                         </div>
-                        
+
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Commission (Rs. )</label>
-                            <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} disabled={formData.status !== 'retained'} className="input-base disabled:opacity-50" />
+                            <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} className="input-base" />
                         </div>
 
                         <div className="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-3 pt-3 border-t border-gray-100">
@@ -273,21 +274,21 @@ const CallManagement = () => {
                         {filteredCalls.length} Records
                     </span>
                 </div>
-                
-                {/* EXPORT AND ADD BUTTONS */}
+
                 <div className="flex items-center justify-end gap-3 w-full md:w-auto">
-                    <select 
-                        value={statusFilter} 
+                    <select
+                        value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
                         className="bg-white border border-gray-200 text-sm font-semibold text-gray-600 rounded-full px-4 py-2 cursor-pointer shadow-sm outline-none focus:border-prime-primary"
                     >
                         <option value="all">All Statuses</option>
                         <option value="retained">Retained</option>
+                        {user?.role !== 'employee' && <option value="clawed_back">Clawed Back</option>}
                     </select>
 
-                    <button 
-                        onClick={handleExportCSV} 
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
+                    <button
+                        onClick={handleExportCSV}
+                        className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                         CSV
@@ -326,7 +327,7 @@ const CallManagement = () => {
                                     <tr key={call.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
-                                        
+
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap">
                                             <div className="flex flex-col gap-1 text-[11px] font-medium text-gray-500">
                                                 {call.handy_id && <span><b className="text-prime-primary mr-1">H:</b> {getCloserName(call.handy_id)}</span>}
@@ -337,7 +338,7 @@ const CallManagement = () => {
                                         </td>
 
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap">
-                                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${call.status === 'retained' ? 'bg-green-50 text-green-600' : call.status === 'not_retained' ? 'bg-red-50 text-red-600' : 'bg-yellow-50 text-yellow-600'}`}>
+                                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${call.status === 'retained' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
                                                 {call.status.replace('_', ' ')}
                                             </span>
                                         </td>

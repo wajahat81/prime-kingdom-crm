@@ -176,7 +176,7 @@ const CallManagement = () => {
                 `"${getCloserName(call.closer_id) || '-'}"`,
                 `"${getCloserName(call.doc_sign_id) || '-'}"`,
                 `"${call.status}"`,
-                `"${call.commission || 0}"`
+                `"${call.commission || 0}"` // 🚨 Updated to always export base commission
             ].join(',');
         });
 
@@ -237,6 +237,7 @@ const CallManagement = () => {
 
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Commission (Rs. )</label>
+                            {/* 🚨 Removed disabled lock so you can edit the agent's commission on clawed back cases */}
                             <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} className="input-base" />
                         </div>
 
@@ -286,13 +287,15 @@ const CallManagement = () => {
                         {user?.role !== 'employee' && <option value="clawed_back">Clawed Back</option>}
                     </select>
 
-                    <button
+                    {/* 🚨 Updated Button styling to match "Add Log" button */}
+                    <Button
                         onClick={handleExportCSV}
-                        className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap"
+                        variant="primary"
+                        className="rounded-full px-4 font-bold shadow-sm text-sm flex items-center gap-2"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                         CSV
-                    </button>
+                    </Button>
 
                     <Button onClick={handleOpenAdd} variant="primary" className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap">
                         + Add Log
@@ -342,9 +345,12 @@ const CallManagement = () => {
                                                 {call.status.replace('_', ' ')}
                                             </span>
                                         </td>
+
+                                        {/* 🚨 Updated to output the base commission for both retained and clawed_back statuses */}
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-700 text-sm">
-                                            {call.status === 'retained' ? `Rs. ${parseFloat(call.commission || 0).toFixed(2)}` : '-'}
+                                            {`Rs. ${parseFloat(call.commission || 0).toFixed(2)}`}
                                         </td>
+
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap text-right">
                                             <div className="flex justify-end gap-2 items-center">
                                                 <button onClick={() => handleOpenEdit(call)} className="text-gray-400 hover:text-prime-primary p-2">

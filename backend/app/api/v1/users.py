@@ -86,7 +86,8 @@ async def admin_edit_user_profile(
             "role": profile_update.role,
             "email": profile_update.email,
             "dialing_id": profile_update.dialing_id,
-            "joining_date": profile_update.joining_date,
+            # 🚨 FIX: Convert the native Python date object to a JSON-safe string
+            "joining_date": profile_update.joining_date.isoformat() if profile_update.joining_date else None,
             "cnic": profile_update.cnic
         }
         

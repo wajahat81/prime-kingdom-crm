@@ -92,8 +92,8 @@ async def full_edit_call_log(
     try:
         update_dict = call_update.dict()
         
-        if update_dict['status'] != 'retained':
-            update_dict['commission'] = 0.0
+        # 🚨 FIX: Removed the override that forced commission to 0.0. 
+        # The base commission stays intact, and the frontend Dashboard handles the split.
             
         response = supabase.table('calls') \
             .update(update_dict) \
@@ -103,7 +103,7 @@ async def full_edit_call_log(
         if not response.data:
             raise HTTPException(status_code=404, detail="Call record not found.")
             
-        # 🚨 LOG ACTIVITY
+        # LOG ACTIVITY
         log_audit(
             admin_id=current_user['id'], 
             action_type="Call Log Edited", 

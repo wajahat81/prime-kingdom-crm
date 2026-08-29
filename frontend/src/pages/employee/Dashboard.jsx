@@ -63,17 +63,16 @@ const Dashboard = () => {
     const [staffList, setStaffList] = useState([]);
     const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
 
-    // Date Filters
     const [selectedDate, setSelectedDate] = useState(getLocalDateStr());
     const [selectedWeek, setSelectedWeek] = useState(getCurrentWeekStr());
 
-    // Call Data
     const [allCalls, setAllCalls] = useState([]);
 
-    // Processed Metrics
-    const [metrics, setMetrics] = useState({ retained: 0, pending: 0 });
-    const [weeklyMetrics, setWeeklyMetrics] = useState({ retained: 0, pending: 0 });
-    const [dailyMetrics, setDailyMetrics] = useState({ retained: 0, pending: 0 });
+    // 🚨 STATE UPDATED: Replaced pending with clawed_back and added closer breakdown stats
+    const [metrics, setMetrics] = useState({ retained: 0, clawed_back: 0, handy: 0, closer: 0, doc_sign: 0 });
+    const [weeklyMetrics, setWeeklyMetrics] = useState({ retained: 0, clawed_back: 0, handy: 0, closer: 0, doc_sign: 0 });
+    const [dailyMetrics, setDailyMetrics] = useState({ retained: 0, clawed_back: 0, handy: 0, closer: 0, doc_sign: 0 });
+
     const [commission, setCommission] = useState({ total: 0, weekly: 0, daily: 0 });
     const [dailyEmployeeStats, setDailyEmployeeStats] = useState([]);
 
@@ -82,9 +81,9 @@ const Dashboard = () => {
 
     const [needsToStartShift, setNeedsToStartShift] = useState(false);
     const [isStartingShift, setIsStartingShift] = useState(false);
+    const [shiftError, setShiftError] = useState(null);
 
     const [allTimeFilter, setAllTimeFilter] = useState('all');
-    const [shiftError, setShiftError] = useState(null);
 
     useEffect(() => {
         const checkShiftStatus = async () => {
@@ -104,13 +103,11 @@ const Dashboard = () => {
     }, [user]);
 
     const handleStartShift = async () => {
-        if (isStartingShift) return; // SPAM LOCK
+        if (isStartingShift) return;
         setIsStartingShift(true);
         setShiftError(null);
         try {
             const response = await apiClient.post('/api/v1/attendance/check-in');
-            
-            // Explicitly verify the DB returned a successful check-in
             if (response.data?.status === 'checked_in') {
                 setNeedsToStartShift(false);
                 window.dispatchEvent(new Event('shift-started-event'));
@@ -132,10 +129,8 @@ const Dashboard = () => {
                     const res = await apiClient.get('/api/v1/users/');
                     const allUsers = res.data.data || res.data || [];
                     const employeesOnly = allUsers.filter(u => u.role === 'employee' || u.role === 'closer');
-                    
-                    // Sort staff list alphabetically by full name/email as well
+
                     employeesOnly.sort((a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || ''));
-                    
                     setStaffList(employeesOnly);
 
                     if (employeesOnly.length > 0) {
@@ -149,7 +144,6 @@ const Dashboard = () => {
         }
     }, [isAdminOrSuper]);
 
-    // Fetch all calls AND attach Real-time Supabase Listener
     useEffect(() => {
         const fetchAllCalls = async () => {
             if (!user) return;
@@ -174,32 +168,19 @@ const Dashboard = () => {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'calls' },
                 (payload) => {
-                    console.log('Dashboard live call update received:', payload);
-
                     setAllCalls((prevCalls) => {
-                        if (payload.eventType === 'INSERT') {
-                            return [payload.new, ...prevCalls];
-                        } 
-                        else if (payload.eventType === 'UPDATE') {
-                            return prevCalls.map((call) => 
-                                call.id === payload.new.id ? payload.new : call
-                            );
-                        } 
-                        else if (payload.eventType === 'DELETE') {
-                            return prevCalls.filter((call) => call.id !== payload.old.id);
-                        }
+                        if (payload.eventType === 'INSERT') return [payload.new, ...prevCalls];
+                        else if (payload.eventType === 'UPDATE') return prevCalls.map((call) => call.id === payload.new.id ? payload.new : call);
+                        else if (payload.eventType === 'DELETE') return prevCalls.filter((call) => call.id !== payload.old.id);
                         return prevCalls;
                     });
                 }
             )
             .subscribe();
 
-        return () => {
-            supabase.removeChannel(dashboardCallsChannel);
-        };
+        return () => supabase.removeChannel(dashboardCallsChannel);
     }, [user, isAdminOrSuper]);
 
-    // Compute metrics instantly when dates or selected employee change
     useEffect(() => {
         if (!allCalls) return;
 
@@ -219,65 +200,83 @@ const Dashboard = () => {
             filteredAllCalls = allCalls.filter(c => new Date(c.created_at) >= cutoffDate);
         }
 
-        const calculateDynamicStats = (callArray, tUserId) => {
+        // 🚨 UPDATED DYNAMIC STATS CALCULATOR
+        const calculateDynamicStats = (callArray, tUserId, viewerRole) => {
             return callArray.reduce((acc, call) => {
-                let multiplier = 0;
-                
-                if (call.employee_id === tUserId) multiplier += 1;
-                if (call.handy_id === tUserId) multiplier += 1;
-                if (call.closer_id === tUserId) multiplier += 1;
-                if (call.doc_sign_id === tUserId) multiplier += 1;
+                const isAgent = call.employee_id === tUserId;
 
-                if (multiplier > 0) {
-                    if (call.status === 'retained') {
-                        acc.retained += 1;
-                        acc.commission += (call.commission || 0) * multiplier;
-                    }
-                    if (call.status === 'pending') acc.pending += 1;
+                let closerMultiplier = 0;
+                if (call.handy_id === tUserId) { closerMultiplier += 1; acc.handy += 1; }
+                if (call.closer_id === tUserId) { closerMultiplier += 1; acc.closer += 1; }
+                if (call.doc_sign_id === tUserId) { closerMultiplier += 1; acc.doc_sign += 1; }
+
+                // 1. Employee Masking: If viewer is an agent, pretend clawed_back is retained
+                let effectiveStatus = call.status;
+                if (viewerRole === 'employee' && call.status === 'clawed_back') {
+                    effectiveStatus = 'retained';
                 }
+
+                if (effectiveStatus === 'retained') {
+                    if (isAgent || closerMultiplier > 0) acc.retained += 1;
+
+                    // Agent always gets commission for retained (and masked clawed_back)
+                    if (isAgent) acc.commission += (parseFloat(call.commission) || 0);
+
+                    // Closers ONLY get commission if it is ACTUALLY retained, not masked
+                    if (call.status === 'retained' && closerMultiplier > 0) {
+                        acc.commission += (parseFloat(call.commission) || 0) * closerMultiplier;
+                    }
+                }
+                else if (effectiveStatus === 'clawed_back') {
+                    if (isAgent || closerMultiplier > 0) acc.clawed_back += 1;
+
+                    // Agent gets commission, but Closers get Rs. 0 because the multiplier is ignored here
+                    if (isAgent) {
+                        acc.commission += (parseFloat(call.commission) || 0);
+                    }
+                }
+
                 return acc;
-            }, { retained: 0, pending: 0, commission: 0 });
+            }, { retained: 0, clawed_back: 0, commission: 0, handy: 0, closer: 0, doc_sign: 0 });
         };
 
-        const allStats = calculateDynamicStats(filteredAllCalls, targetUserId);
-        setMetrics({ retained: allStats.retained, pending: allStats.pending });
+        const allStats = calculateDynamicStats(filteredAllCalls, targetUserId, user?.role);
+        setMetrics({ retained: allStats.retained, clawed_back: allStats.clawed_back, handy: allStats.handy, closer: allStats.closer, doc_sign: allStats.doc_sign });
 
         const weekCalls = allCalls.filter(call => {
             const callDate = new Date(call.created_at);
             return callDate >= startOfWeek && callDate <= endOfWeek;
         });
-        const weekStats = calculateDynamicStats(weekCalls, targetUserId);
-        setWeeklyMetrics({ retained: weekStats.retained, pending: weekStats.pending });
+        const weekStats = calculateDynamicStats(weekCalls, targetUserId, user?.role);
+        setWeeklyMetrics({ retained: weekStats.retained, clawed_back: weekStats.clawed_back, handy: weekStats.handy, closer: weekStats.closer, doc_sign: weekStats.doc_sign });
 
         const dayCalls = allCalls.filter(call => {
             const callDate = new Date(call.created_at);
             return callDate >= targetDayStart && callDate <= targetDayEnd;
         });
-        const dayStats = calculateDynamicStats(dayCalls, targetUserId);
-        setDailyMetrics({ retained: dayStats.retained, pending: dayStats.pending });
+        const dayStats = calculateDynamicStats(dayCalls, targetUserId, user?.role);
+        setDailyMetrics({ retained: dayStats.retained, clawed_back: dayStats.clawed_back, handy: dayStats.handy, closer: dayStats.closer, doc_sign: dayStats.doc_sign });
 
         setCommission({ total: allStats.commission, weekly: weekStats.commission, daily: dayStats.commission });
 
         if (isAdminOrSuper && staffList.length > 0) {
             const tableData = staffList.map(emp => {
-                const empDayStats = calculateDynamicStats(dayCalls, emp.id);
+                const empDayStats = calculateDynamicStats(dayCalls, emp.id, user?.role);
                 return {
                     id: emp.id,
                     name: emp.full_name || emp.email,
                     dialingId: emp.dialing_id || 'N/A',
-                    joiningDate: emp.joining_date || 'N/A', 
+                    joiningDate: emp.joining_date || 'N/A',
                     retained: empDayStats.retained,
-                    pending: empDayStats.pending,
+                    clawed_back: empDayStats.clawed_back,
                     commission: empDayStats.commission
                 };
             });
 
-            // Sort table data alphabetically by agent name
             tableData.sort((a, b) => a.name.localeCompare(b.name));
-
             setDailyEmployeeStats(tableData);
         }
-    }, [allCalls, selectedEmployeeId, selectedDate, selectedWeek, isAdminOrSuper, staffList, user?.id, allTimeFilter]);
+    }, [allCalls, selectedEmployeeId, selectedDate, selectedWeek, isAdminOrSuper, staffList, user?.role, allTimeFilter]);
 
     const handleNextEmployee = () => {
         if (!staffList.length) return;
@@ -295,6 +294,9 @@ const Dashboard = () => {
 
     const currentViewedEmployee = staffList.find(e => e.id === selectedEmployeeId);
 
+    // Check if the current viewed dashboard belongs to a Closer
+    const isViewedCloser = isAdminOrSuper ? (currentViewedEmployee?.role === 'closer') : (user?.role === 'closer');
+
     if (loading && !staffList.length && isAdminOrSuper) return (
         <div className="flex justify-center items-center h-[60vh] w-full">
             <div className="w-8 h-8 border-4 border-prime-primary/20 border-t-prime-primary rounded-full animate-spin"></div>
@@ -307,35 +309,35 @@ const Dashboard = () => {
             <AnnouncementBanner />
             {isAdminOrSuper && <PendingLeaveAlert />}
             {needsToStartShift && createPortal(
-        <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in">
-            <div className="bg-white rounded-3xl shadow-card max-w-sm w-full p-8 text-center border border-prime-border transform transition-all">
-                <div className="w-16 h-16 bg-prime-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <svg className="w-8 h-8 text-prime-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                </div>
-                <h2 className="text-xl font-bold text-prime-text mb-2 tracking-tight">Shift Not Started</h2>
-                <p className="text-prime-muted text-sm mb-4 font-medium px-2">
-                    Kindly start your shift for today to unlock your workspace.
-                </p>
-                
-                {shiftError && (
-                    <div className="mb-6 bg-red-50 text-red-600 px-4 py-2 rounded-lg text-xs font-semibold text-center border border-red-100">
-                        {shiftError}
-                    </div>
-                )}
+                <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-md flex items-center justify-center z-[9999] p-4 animate-fade-in">
+                    <div className="bg-white rounded-3xl shadow-card max-w-sm w-full p-8 text-center border border-prime-border transform transition-all">
+                        <div className="w-16 h-16 bg-prime-primary/10 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <svg className="w-8 h-8 text-prime-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <h2 className="text-xl font-bold text-prime-text mb-2 tracking-tight">Shift Not Started</h2>
+                        <p className="text-prime-muted text-sm mb-4 font-medium px-2">
+                            Kindly start your shift for today to unlock your workspace.
+                        </p>
 
-                <button
-                    onClick={handleStartShift}
-                    disabled={isStartingShift}
-                    className="w-full py-3.5 px-4 bg-prime-primary text-white rounded-full font-bold hover:bg-prime-secondary transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                    {isStartingShift ? 'Connecting...' : 'Start My Shift'}
-                </button>
-            </div>
-        </div>,
-        document.body
-    )}
+                        {shiftError && (
+                            <div className="mb-6 bg-red-50 text-red-600 px-4 py-2 rounded-lg text-xs font-semibold text-center border border-red-100">
+                                {shiftError}
+                            </div>
+                        )}
+
+                        <button
+                            onClick={handleStartShift}
+                            disabled={isStartingShift}
+                            className="w-full py-3.5 px-4 bg-prime-primary text-white rounded-full font-bold hover:bg-prime-secondary transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                        >
+                            {isStartingShift ? 'Connecting...' : 'Start My Shift'}
+                        </button>
+                    </div>
+                </div>,
+                document.body
+            )}
 
             <div className="w-full pt-4">
                 {error && <div className="mb-8 bg-red-50 text-red-600 px-6 py-3 rounded-full text-sm font-medium text-center">{error}</div>}
@@ -351,18 +353,11 @@ const Dashboard = () => {
 
                     {isAdminOrSuper && staffList.length > 0 && (
                         <div className="flex items-center gap-2 w-full md:w-auto">
-                            <button
-                                onClick={handlePrevEmployee}
-                                className="p-2.5 bg-white border border-gray-200 rounded-full text-gray-400 hover:bg-gray-50 hover:text-prime-primary shadow-sm transition-colors"
-                            >
+                            <button onClick={handlePrevEmployee} className="p-2.5 bg-white border border-gray-200 rounded-full text-gray-400 hover:bg-gray-50 hover:text-prime-primary shadow-sm transition-colors">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
                             </button>
 
-                            <select
-                                value={selectedEmployeeId}
-                                onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                                className="input-base cursor-pointer bg-white font-semibold text-sm min-w-[220px] shadow-sm"
-                            >
+                            <select value={selectedEmployeeId} onChange={(e) => setSelectedEmployeeId(e.target.value)} className="input-base cursor-pointer bg-white font-semibold text-sm min-w-[220px] shadow-sm">
                                 {staffList.map(emp => (
                                     <option key={emp.id} value={emp.id}>
                                         {emp.full_name} {emp.dialing_id ? `(#${emp.dialing_id})` : ''} - Joined: {emp.joining_date || 'N/A'}
@@ -370,10 +365,7 @@ const Dashboard = () => {
                                 ))}
                             </select>
 
-                            <button
-                                onClick={handleNextEmployee}
-                                className="p-2.5 bg-white border border-gray-200 rounded-full text-gray-400 hover:bg-gray-50 hover:text-prime-primary shadow-sm transition-colors"
-                            >
+                            <button onClick={handleNextEmployee} className="p-2.5 bg-white border border-gray-200 rounded-full text-gray-400 hover:bg-gray-50 hover:text-prime-primary shadow-sm transition-colors">
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" /></svg>
                             </button>
                         </div>
@@ -384,32 +376,26 @@ const Dashboard = () => {
                     <div className="bg-prime-primary rounded-2xl p-8 text-white border-0 shadow-sm relative overflow-hidden">
                         <div className="relative z-10">
                             <h3 className="text-white/90 text-xs font-bold uppercase tracking-widest mb-2">Total Commission Earned</h3>
-                            <p className="text-5xl font-bold tracking-tight">Rs. {commission.total}</p>
+                            <p className="text-5xl font-bold tracking-tight">Rs. {commission.total.toFixed(2)}</p>
                         </div>
                     </div>
                     <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm relative overflow-hidden">
                         <div className="relative z-10">
                             <h3 className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-2">Earned This Week</h3>
-                            <p className="text-5xl font-bold tracking-tight text-prime-primary">Rs. {commission.weekly}</p>
+                            <p className="text-5xl font-bold tracking-tight text-prime-primary">Rs. {commission.weekly.toFixed(2)}</p>
                         </div>
                     </div>
                 </div>
 
                 {/* DAILY STATS */}
-                <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
+                <div className="flex flex-wrap items-center justify-between mb-4 gap-3 px-2">
                     <h2 className="text-lg font-semibold text-gray-800">Daily Stats</h2>
-                    <input
-                        type="date"
-                        value={selectedDate}
-                        max={getLocalDateStr()}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer"
-                    />
+                    <input type="date" value={selectedDate} max={getLocalDateStr()} onChange={(e) => setSelectedDate(e.target.value)} className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 px-2">
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Commission</h3>
-                        <p className="text-4xl font-bold text-prime-primary">Rs. {commission.daily}</p>
+                        <p className="text-4xl font-bold text-prime-primary">Rs. {commission.daily.toFixed(2)}</p>
                     </div>
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
@@ -418,35 +404,27 @@ const Dashboard = () => {
                 </div>
 
                 {/* WEEKLY STATS */}
-                <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
+                <div className="flex flex-wrap items-center justify-between mb-4 gap-3 px-2">
                     <h2 className="text-lg font-semibold text-gray-800">Weekly Stats</h2>
-                    <input
-                        type="week"
-                        value={selectedWeek}
-                        max={getCurrentWeekStr()}
-                        onChange={(e) => setSelectedWeek(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer"
-                    />
+                    <input type="week" value={selectedWeek} max={getCurrentWeekStr()} onChange={(e) => setSelectedWeek(e.target.value)} className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer" />
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
+                <div className={`grid grid-cols-1 ${user?.role !== 'employee' ? 'md:grid-cols-2' : ''} gap-6 mb-10 px-2`}>
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
                         <p className="text-4xl font-bold text-emerald-500">{weeklyMetrics.retained}</p>
                     </div>
-                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
-                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Pending Review</h3>
-                        <p className="text-4xl font-bold text-yellow-500">{weeklyMetrics.pending}</p>
-                    </div>
+                    {user?.role !== 'employee' && (
+                        <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                            <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Clawed Back</h3>
+                            <p className="text-4xl font-bold text-red-500">{weeklyMetrics.clawed_back}</p>
+                        </div>
+                    )}
                 </div>
 
                 {/* ALL-TIME STATS */}
-                <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
+                <div className="flex flex-wrap items-center justify-between mb-4 gap-3 px-2">
                     <h2 className="text-lg font-semibold text-gray-800">All-Time Stats</h2>
-                    <select
-                        value={allTimeFilter}
-                        onChange={(e) => setAllTimeFilter(e.target.value)}
-                        className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer"
-                    >
+                    <select value={allTimeFilter} onChange={(e) => setAllTimeFilter(e.target.value)} className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer">
                         <option value="all">All Time</option>
                         <option value="1">Past 1 Month</option>
                         <option value="2">Past 2 Months</option>
@@ -456,29 +434,47 @@ const Dashboard = () => {
                         <option value="12">Past 12 Months</option>
                     </select>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-10 px-2">
+                <div className={`grid grid-cols-1 ${user?.role !== 'employee' ? 'md:grid-cols-2' : ''} gap-6 mb-10 px-2`}>
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
                         <p className="text-4xl font-bold text-emerald-500">{metrics.retained}</p>
                     </div>
-                    <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
-                        <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Pending Review</h3>
-                        <p className="text-4xl font-bold text-yellow-500">{metrics.pending}</p>
-                    </div>
+                    {user?.role !== 'employee' && (
+                        <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                            <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Clawed Back</h3>
+                            <p className="text-4xl font-bold text-red-500">{metrics.clawed_back}</p>
+                        </div>
+                    )}
                 </div>
 
-                {/* ADMIN TABLE (Sorted Alphabetically) */}
+                {/* 🚨 NEW CLOSER SPECIFIC BREAKDOWN */}
+                {isViewedCloser && (
+                    <div className="mt-2 mb-10">
+                        <div className="flex flex-wrap items-center justify-between mb-4 gap-3 px-2">
+                            <h2 className="text-lg font-semibold text-gray-800">Closer Breakdown (All-Time)</h2>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 px-2">
+                            <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                                <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Handy</h3>
+                                <p className="text-4xl font-bold text-blue-500">{metrics.handy}</p>
+                            </div>
+                            <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                                <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Closer</h3>
+                                <p className="text-4xl font-bold text-purple-500">{metrics.closer}</p>
+                            </div>
+                            <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
+                                <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Doc Sign</h3>
+                                <p className="text-4xl font-bold text-indigo-500">{metrics.doc_sign}</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ADMIN TABLE */}
                 {isAdminOrSuper && (
-                    <div className="mt-8 pb-10">
+                    <div className="mt-8 pb-10 px-2">
                         <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
                             <h2 className="text-lg font-semibold text-gray-800">All Agents Daily Record</h2>
-                            <input
-                                type="date"
-                                value={selectedDate}
-                                max={getLocalDateStr()}
-                                onChange={(e) => setSelectedDate(e.target.value)}
-                                className="input-base text-sm py-2 px-4 shadow-sm !w-fit font-semibold cursor-pointer"
-                            />
                         </div>
 
                         <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
@@ -489,7 +485,7 @@ const Dashboard = () => {
                                             <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Agent Name</th>
                                             <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Dialing ID</th>
                                             <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Retained</th>
-                                            <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Pending</th>
+                                            <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Clawed Back</th>
                                             <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Daily Comm.</th>
                                         </tr>
                                     </thead>
@@ -503,8 +499,8 @@ const Dashboard = () => {
                                                     </td>
                                                     <td className="p-4 text-sm text-gray-600">{emp.dialingId !== 'N/A' ? `#${emp.dialingId}` : '-'}</td>
                                                     <td className="p-4 text-sm font-bold text-emerald-600">{emp.retained}</td>
-                                                    <td className="p-4 text-sm font-bold text-yellow-600">{emp.pending}</td>
-                                                    <td className="p-4 text-sm font-bold text-prime-primary">Rs. {emp.commission}</td>
+                                                    <td className="p-4 text-sm font-bold text-red-600">{emp.clawed_back}</td>
+                                                    <td className="p-4 text-sm font-bold text-prime-primary">Rs. {emp.commission.toFixed(2)}</td>
                                                 </tr>
                                             ))
                                         ) : (

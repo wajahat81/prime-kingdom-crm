@@ -21,7 +21,7 @@ def get_shift_rules_for_date(target_date_str: str, check_in_dt: datetime = None)
             if target_date_str in overrides:
                 override_data = overrides[target_date_str]
                 return {
-                    "req_hours": override_data.get("req_hours", 9),
+                    "req_hours": override_data.get("req_hours", 9.25), # Updated
                     "start_time": override_data.get("start_time", "13:00"),
                     "grace_mins": override_data.get("grace_mins", 10)
                 }
@@ -30,14 +30,14 @@ def get_shift_rules_for_date(target_date_str: str, check_in_dt: datetime = None)
             if check_in_dt:
                 weekday = check_in_dt.weekday() 
                 if weekday == 4:
-                    day_profile = settings_val.get('friday', {"start_time": "15:00", "grace_mins": 10, "req_hours": 7})
+                    day_profile = settings_val.get('friday', {"start_time": "15:00", "grace_mins": 10, "req_hours": 6.25})
                 elif weekday == 5:
                     day_profile = settings_val.get('saturday', {"start_time": "14:00", "grace_mins": 10, "req_hours": 5.75})
                 else:
-                    day_profile = settings_val.get('standard', {"start_time": "13:00", "grace_mins": 10, "req_hours": 9})
+                    day_profile = settings_val.get('standard', {"start_time": "13:00", "grace_mins": 10, "req_hours": 9.25}) # Updated
                 
                 return {
-                    "req_hours": day_profile.get("req_hours", 9),
+                    "req_hours": day_profile.get("req_hours", 9.25), # Updated
                     "start_time": day_profile.get("start_time", "13:00"),
                     "grace_mins": day_profile.get("grace_mins", 10)
                 }
@@ -45,8 +45,9 @@ def get_shift_rules_for_date(target_date_str: str, check_in_dt: datetime = None)
     except Exception as e:
         print(f"Failed to load settings: {e}")
     
+    # Updated final fallback
     return {
-        "req_hours": 9,
+        "req_hours": 9.25, 
         "start_time": "13:00",
         "grace_mins": 10
     }

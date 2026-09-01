@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
-import { supabase } from '../../services/supabaseClient'; // 1. Import Supabase client
-import { useAuth } from '../../context/AuthContext'; // Make sure useAuth is imported to check user ID
+import { supabase } from '../../services/supabaseClient';
+import { useAuth } from '../../context/AuthContext';
 
 const LeaveRequest = () => {
-    const { user } = useAuth(); // Get current logged-in employee
+    const { user } = useAuth(); 
     const [leaves, setLeaves] = useState([]);
     const [formData, setFormData] = useState({ start_date: '', end_date: '', reason: '' });
     const [status, setStatus] = useState({ type: '', message: '' });
@@ -14,7 +14,8 @@ const LeaveRequest = () => {
 
     const fetchLeaves = async () => {
         try {
-            const response = await apiClient.get('/api/v1/leaves/');
+            // 🚨 FIXED: Now calls the specific '/me' endpoint so Admins only see their own history here
+            const response = await apiClient.get('/api/v1/leaves/me');
             setLeaves(response.data.data || []);
         } catch (error) {
             console.error("Failed to fetch leaves", error);
@@ -26,24 +27,19 @@ const LeaveRequest = () => {
     useEffect(() => {
         fetchLeaves();
 
-        // 2. Add real-time listener for leave request changes
         const leaveChannel = supabase
             .channel('employee-leave-updates')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'leave_requests' },
                 (payload) => {
-                    console.log('Real-time leave update received:', payload);
-
                     setLeaves((prevLeaves) => {
                         if (payload.eventType === 'INSERT') {
-                            // If this employee created a new leave request
                             if (payload.new.employee_id === user?.id) {
                                 return [payload.new, ...prevLeaves];
                             }
                         } 
                         else if (payload.eventType === 'UPDATE') {
-                            // If an admin approved/rejected, update ONLY that specific row
                             return prevLeaves.map((leave) => 
                                 leave.id === payload.new.id ? payload.new : leave
                             );
@@ -57,7 +53,6 @@ const LeaveRequest = () => {
             )
             .subscribe();
 
-        // 3. Cleanup connection on unmount
         return () => {
             supabase.removeChannel(leaveChannel);
         };
@@ -80,7 +75,7 @@ const LeaveRequest = () => {
             await apiClient.post('/api/v1/leaves/', formData);
             setStatus({ type: 'success', message: 'Leave request submitted successfully!' });
             setFormData({ start_date: '', end_date: '', reason: '' });
-            fetchLeaves(); // Refresh the list
+            fetchLeaves(); 
         } catch (error) {
             setStatus({ type: 'error', message: 'Failed to submit leave request.' });
         } finally {
@@ -96,7 +91,6 @@ const LeaveRequest = () => {
         }
     };
 
-    // Helper to format YYYY-MM-DD to DD/MM/YYYY
     const formatToDDMMYYYY = (dateString) => {
         if (!dateString) return '';
         const [year, month, day] = dateString.split('-'); 

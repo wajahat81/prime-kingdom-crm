@@ -19,17 +19,28 @@ const Sidebar = ({ closeMobileMenu }) => {
             items.push({ path: '/leaves', label: 'Leave Requests' });
         }
 
-        if (user?.role === ROLES.ADMIN || user?.role === ROLES.SUPER_ADMIN) {
-            items.push({ path: '/admin/attendance', label: 'Attendance' });
+        if (user?.role === ROLES.ADMIN ) {
+            // 🚨 NEW: Added 'My Leaves' link so Admins can apply for leaves
+            
+            
+            items.push({ path: '/admin/attendance', label: 'Attendance Logs' });
+            items.push({ path: '/admin/calls/manage', label: 'Manage Cases' });   
+            items.push({ path: '/admin/users', label: 'Manage Users' }); 
+            items.push({ path: '/leaves', label: 'Apply for Leave' });
+            items.push({ path: '/admin/leaves', label: 'Manage Leave Requests' });
+            items.push({ path: '/admin/office-settings', label: 'Manage Office Timings' });
+            items.push({ path: '/admin/terminated-employees', label: 'Manage Terminated Employees' });
+            items.push({ path: '/admin/audit-logs', label: 'Activity Logs' }); 
+        }
+        
+        if (user?.role === ROLES.SUPER_ADMIN) {
+            items.push({ path: '/admin/attendance', label: 'Attendance Logs' });
             items.push({ path: '/admin/calls/manage', label: 'Manage Cases' });   
             items.push({ path: '/admin/users', label: 'Manage Users' }); 
             items.push({ path: '/admin/leaves', label: 'Manage Leave Requests' });
             items.push({ path: '/admin/office-settings', label: 'Manage Office Timings' });
             items.push({ path: '/admin/terminated-employees', label: 'Manage Terminated Employees' });
-            items.push({ path: '/admin/audit-logs', label: 'Activity Logs' }); // NEW LINK
-        }
-        
-        if (user?.role === ROLES.SUPER_ADMIN) {
+            items.push({ path: '/admin/audit-logs', label: 'Activity Logs' }); 
             items.push({ path: '/admin/announcements', label: 'Manage Announcements' }); 
         }
         

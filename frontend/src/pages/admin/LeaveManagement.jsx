@@ -1,18 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
-import { useAuth } from '../../context/AuthContext'; // NEW: Imported useAuth
+import { useAuth } from '../../context/AuthContext'; 
 import { supabase } from '../../services/supabaseClient';
 
 const LeaveManagement = () => {
-    const { user } = useAuth(); // NEW: Get the currently logged-in admin
+    const { user } = useAuth(); 
     const [leaves, setLeaves] = useState([]);
-    const [users, setUsers] = useState([]); // NEW: State to hold all users for name lookups
+    const [users, setUsers] = useState([]); 
     const [loading, setLoading] = useState(true);
 
     const fetchData = async () => {
         try {
-            // Fetch both leaves and users in parallel
             const [leavesRes, usersRes] = await Promise.all([
                 apiClient.get('/api/v1/leaves/'),
                 apiClient.get('/api/v1/users/')
@@ -27,25 +26,19 @@ const LeaveManagement = () => {
     };
 
     useEffect(() => {
-        // 1. Fetch the initial data when the page loads
         fetchData();
 
-        // 2. Subscribe to real-time changes on the leave_requests table
         const leaveChannel = supabase
             .channel('leave-updates')
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'leave_requests' },
                 (payload) => {
-                    console.log('Real-time update received!', payload);
-                    // The easiest and safest way to ensure names map correctly 
-                    // is to just trigger your existing fetchData() function!
                     fetchData();
                 }
             )
             .subscribe();
 
-        // 3. Cleanup the connection when the admin leaves the page
         return () => {
             supabase.removeChannel(leaveChannel);
         };
@@ -54,12 +47,11 @@ const LeaveManagement = () => {
     const handleAction = async (id, newStatus) => {
         try {
             await apiClient.put(`/api/v1/leaves/${id}/status`, { status: newStatus });
-            // Update local state without full reload, instantly injecting the current admin's ID
             setLeaves(leaves.map(leave => 
                 leave.id === id ? { ...leave, status: newStatus, action_by: user.id } : leave
             ));
         } catch (error) {
-            alert('Failed to update leave status.');
+            alert(error.response?.data?.detail || 'Failed to update leave status.');
         }
     };
 
@@ -84,9 +76,9 @@ const LeaveManagement = () => {
                     <h1 className="text-2xl font-bold text-prime-text tracking-tight">Leave Management</h1>
                 </div>
 
-                <div className="bg-white rounded-3xl shadow-sm border border-prime-border overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left border-collapse">
+                <div className="card-base flex flex-col min-h-[400px] w-full overflow-hidden">
+                <div className="overflow-x-auto w-full flex-grow">
+                    <table className="min-w-full">
                             <thead>
                                 <tr className="bg-gray-50 border-b border-gray-200">
                                     <th className="p-4 text-xs font-bold text-gray-500 uppercase">Employee</th>
@@ -101,14 +93,12 @@ const LeaveManagement = () => {
                                     <tr><td colSpan="5" className="p-8 text-center text-sm text-gray-500">Loading...</td></tr>
                                 ) : leaves.length > 0 ? (
                                     leaves.map(leave => {
-                                        // Look up BOTH the employee and the admin
                                         const adminUser = users.find(u => u.id === leave.action_by);
                                         const employeeUser = users.find(u => u.id === leave.employee_id);
                                         
                                         return (
                                         <tr key={leave.id} className="hover:bg-gray-50/50">
                                             <td className="p-4">
-                                                {/* FIXED: Pulling the name and email from our frontend users list */}
                                                 <div className="font-semibold text-gray-800">
                                                     {employeeUser ? employeeUser.full_name : 'Unknown User'}
                                                 </div>
@@ -120,10 +110,11 @@ const LeaveManagement = () => {
                                             <td className="p-4 text-sm font-semibold text-gray-800 whitespace-nowrap">
                                                 {formatToDDMMYYYY(leave.start_date)} <br/><span className="text-gray-400 font-normal text-xs">to</span> {formatToDDMMYYYY(leave.end_date)}
                                             </td>
-                                            <td className="p-4 text-sm text-gray-600 max-w-xs">{leave.reason}</td>
+                                            <td className="p-4 text-sm text-gray-600 min-w-[300px] whitespace-normal break-words">
+    {leave.reason}
+</td>
                                             <td className="p-4">
                                                 {getStatusBadge(leave.status)}
-                                                {/* NEW: Render the admin's name */}
                                                 {leave.action_by && (
                                                     <div className="text-[10px] text-gray-400 font-semibold mt-1.5 ml-1 uppercase tracking-wider">
                                                         By: {adminUser ? adminUser.full_name : 'Admin'}
@@ -132,14 +123,19 @@ const LeaveManagement = () => {
                                             </td>
                                             <td className="p-4 text-right whitespace-nowrap">
                                                 {leave.status === 'pending' ? (
-                                                    <div className="flex justify-end gap-2">
-                                                        <button onClick={() => handleAction(leave.id, 'approved')} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-full transition-colors" title="Approve">
-                                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
-                                                        </button>
-                                                        <button onClick={() => handleAction(leave.id, 'rejected')} className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-full transition-colors" title="Reject">
-                                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                                                        </button>
-                                                    </div>
+                                                    // 🚨 SECURITY LOCK VISUAL: Hide buttons if the Admin tries to approve their own request
+                                                    leave.employee_id === user?.id ? (
+                                                        <span className="text-xs text-red-400 font-semibold uppercase block mt-2">Cannot Self-Approve</span>
+                                                    ) : (
+                                                        <div className="flex justify-end gap-2">
+                                                            <button onClick={() => handleAction(leave.id, 'approved')} className="p-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-full transition-colors" title="Approve">
+                                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>
+                                                            </button>
+                                                            <button onClick={() => handleAction(leave.id, 'rejected')} className="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-full transition-colors" title="Reject">
+                                                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                                            </button>
+                                                        </div>
+                                                    )
                                                 ) : (
                                                     <span className="text-xs text-gray-400">Processed</span>
                                                 )}

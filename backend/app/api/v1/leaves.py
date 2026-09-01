@@ -20,7 +20,6 @@ async def submit_leave_request(
     payload: LeaveRequestCreate, 
     current_user: dict = Depends(get_current_active_user)
 ):
-    """Employee submits a new leave request."""
     new_request = {
         "id": str(uuid.uuid4()),
         "employee_id": current_user['id'],
@@ -34,13 +33,19 @@ async def submit_leave_request(
         return {"message": "Leave request submitted successfully", "data": response.data[0]}
     raise HTTPException(status_code=500, detail="Failed to submit leave request")
 
+# 🚨 NEW: Endpoint for the user's personal leave history (crucial for Admins)
+@router.get("/me")
+async def get_my_leave_requests(current_user: dict = Depends(get_current_active_user)):
+    try:
+        response = supabase.table('leave_requests').select('*').eq('employee_id', current_user['id']).order('created_at', desc=True).execute()
+        return {"data": response.data if response.data else []}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/")
 async def get_leave_requests(current_user: dict = Depends(get_current_active_user)):
-    """Employees see their own requests; Admins see ALL requests."""
     try:
         is_admin = current_user.get('role') in ['admin', 'super_admin']
-        
-        # FIXED: Removed the ambiguous profiles join
         query = supabase.table('leave_requests').select('*')
         
         if not is_admin:
@@ -48,10 +53,7 @@ async def get_leave_requests(current_user: dict = Depends(get_current_active_use
             
         response = query.order('created_at', desc=True).execute()
         return {"data": response.data if response.data else []}
-        
     except Exception as e:
-        print(f"GET leaves error: {e}")
-        # Raising an HTTPException ensures CORS headers are still attached on failure
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{leave_id}/status")
@@ -61,12 +63,21 @@ async def update_leave_status(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
-        # FIXED: Changed 'leaves' to 'leave_requests' to match your database!
+        # 🚨 SECURITY LOCK: Prevent Admins from approving their own leaves
+        leave_check = supabase.table('leave_requests').select('employee_id').eq('id', leave_id).execute()
+        if not leave_check.data:
+            raise HTTPException(status_code=404, detail="Leave request not found.")
+        
+        if leave_check.data[0]['employee_id'] == current_user['id']:
+            raise HTTPException(status_code=403, detail="You are strictly forbidden from approving or rejecting your own leave requests.")
+
         update_response = supabase.table('leave_requests').update({
             'status': payload.status,
             'action_by': current_user['id'] 
         }).eq('id', leave_id).execute()
         
         return {"message": "Leave updated", "data": update_response.data}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

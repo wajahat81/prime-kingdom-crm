@@ -3,13 +3,12 @@ from app.db.session import supabase
 from app.core.permissions import get_current_active_user, require_role
 from app.schemas.attendance_schema import AttendanceStatusUpdate, AttendanceTimeUpdate
 from app.services.attendance_service import update_attendance_status, update_attendance_times
-from app.api.v1.audit import log_audit # <-- IMPORTED HELPER
+from app.api.v1.audit import log_audit
 import uuid
 from datetime import datetime, timezone, timedelta
 
 router = APIRouter()
 
-# --- STRICT PAKISTAN TIMEZONE (UTC+5) ---
 PKT = timezone(timedelta(hours=5))
 
 def get_shift_rules_for_date(target_date_str: str, check_in_dt: datetime = None):
@@ -164,15 +163,10 @@ async def get_attendance_status(current_user: dict = Depends(get_current_active_
         print(f"Get status error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.get("/history/me")
 async def get_my_attendance_history(current_user: dict = Depends(get_current_active_user)):
     try:
-        response = supabase.table('attendance') \
-            .select('*') \
-            .eq('employee_id', current_user['id']) \
-            .order('date', desc=True) \
-            .execute()
+        response = supabase.table('attendance').select('*').eq('employee_id', current_user['id']).order('date', desc=True).execute()
         return {"data": response.data if response.data else []}
     except Exception as e:
         print(f"Get my history error: {e}")
@@ -189,7 +183,6 @@ async def get_attendance_history(
     except Exception as e:
         print(f"Get history error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @router.get("/settings")
 async def get_office_settings(current_user: dict = Depends(require_role(["admin", "super_admin"]))):
@@ -211,12 +204,7 @@ async def update_office_settings(
             'updated_at': datetime.now(timezone.utc).isoformat()
         }).eq('setting_key', 'shift_rules').execute()
         
-        # 🚨 LOG ACTIVITY
-        log_audit(
-            admin_id=current_user['id'], 
-            action_type="Office Settings Updated", 
-            description="Modified global shift rules or overrides."
-        )
+        log_audit(admin_id=current_user['id'], action_type="Office Settings Updated", description="Modified global shift rules or overrides.")
         
         return {"message": "Settings updated", "data": response.data}
     except Exception as e:
@@ -229,18 +217,21 @@ async def update_status(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
-        updated_record = update_attendance_status(log_id, payload.status)
-        if not updated_record:
+        # 🚨 SECURITY LOCK: Prevent Admins from approving their own attendance
+        record_check = supabase.table('attendance').select('employee_id').eq('id', log_id).execute()
+        if not record_check.data:
             raise HTTPException(status_code=404, detail="Attendance record not found.")
-            
-        # Fetch the employee's profile details
+        if record_check.data[0]['employee_id'] == current_user['id']:
+            raise HTTPException(status_code=403, detail="You are strictly forbidden from approving or rejecting your own attendance.")
+
+        updated_record = update_attendance_status(log_id, payload.status)
+        
         emp_id = updated_record.get('employee_id')
         profile_res = supabase.table('profiles').select('full_name, dialing_id').eq('id', emp_id).execute()
         
         emp_name = profile_res.data[0].get('full_name', 'Unknown') if profile_res.data else 'Unknown'
         emp_did = profile_res.data[0].get('dialing_id', 'Unknown') if profile_res.data else 'Unknown'
             
-        # 🚨 LOG ACTIVITY WITH NAME AND ID
         log_audit(
             admin_id=current_user['id'], 
             action_type=f"Timesheet {payload.status.capitalize()}", 
@@ -251,7 +242,6 @@ async def update_status(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Update status error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{log_id}")
@@ -261,21 +251,24 @@ async def update_times(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
+        # 🚨 SECURITY LOCK: Prevent Admins from modifying their own timesheets
+        record_check = supabase.table('attendance').select('employee_id').eq('id', log_id).execute()
+        if not record_check.data:
+            raise HTTPException(status_code=404, detail="Attendance record not found.")
+        if record_check.data[0]['employee_id'] == current_user['id']:
+            raise HTTPException(status_code=403, detail="You are strictly forbidden from editing your own timesheets.")
+
         check_in_str = payload.check_in.isoformat() if payload.check_in else None
         check_out_str = payload.check_out.isoformat() if payload.check_out else None
         
         updated_record = update_attendance_times(log_id, check_in_str, check_out_str)
-        if not updated_record:
-            raise HTTPException(status_code=404, detail="Attendance record not found or no data provided.")
             
-        # Fetch the employee's profile details
         emp_id = updated_record.get('employee_id')
         profile_res = supabase.table('profiles').select('full_name, dialing_id').eq('id', emp_id).execute()
         
         emp_name = profile_res.data[0].get('full_name', 'Unknown') if profile_res.data else 'Unknown'
         emp_did = profile_res.data[0].get('dialing_id', 'Unknown') if profile_res.data else 'Unknown'
             
-        # 🚨 LOG ACTIVITY WITH NAME AND ID
         log_audit(
             admin_id=current_user['id'], 
             action_type="Timesheet Edited", 
@@ -286,7 +279,6 @@ async def update_times(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Update times error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/date/{target_date}")
@@ -295,14 +287,9 @@ async def get_attendance_by_date(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
-        response = supabase.table('attendance') \
-            .select('*') \
-            .eq('date', target_date) \
-            .execute()
-            
+        response = supabase.table('attendance').select('*').eq('date', target_date).execute()
         return {"data": response.data or []}
     except Exception as e:
-        print(f"Attendance Fetch Error: {e}") 
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.put("/{log_id}/reopen")
@@ -311,7 +298,13 @@ async def reopen_shift(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
-        # Fetch the employee's profile details using a join before executing the RPC
+        # 🚨 SECURITY LOCK: Prevent Admins from reopening their own shifts
+        record_check = supabase.table('attendance').select('employee_id').eq('id', log_id).execute()
+        if not record_check.data:
+            raise HTTPException(status_code=404, detail="Attendance record not found.")
+        if record_check.data[0]['employee_id'] == current_user['id']:
+            raise HTTPException(status_code=403, detail="You are strictly forbidden from reopening your own shift.")
+
         record_res = supabase.table('attendance').select('profiles(full_name, dialing_id)').eq('id', log_id).execute()
         
         emp_name = 'Unknown'
@@ -322,7 +315,6 @@ async def reopen_shift(
 
         response = supabase.rpc('force_reopen_shift', {'target_log_id': log_id}).execute()
         
-        # 🚨 LOG ACTIVITY WITH NAME AND ID
         log_audit(
             admin_id=current_user['id'], 
             action_type="Shift Reopened", 
@@ -330,6 +322,7 @@ async def reopen_shift(
         )
         
         return {"message": "Shift forcefully reopened"}
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"CRITICAL REOPEN ERROR: {e}")
         raise HTTPException(status_code=500, detail=str(e))

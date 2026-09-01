@@ -3,14 +3,16 @@ import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
 import { supabase } from '../../services/supabaseClient';
 import { createPortal } from 'react-dom';
+import { useAuth } from '../../context/AuthContext'; // 🚨 NEW: Added useAuth
 
 const getLocalDateStr = () => {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
 };
 
 const AttendanceLogs = () => {
+    const { user } = useAuth(); // 🚨 NEW: Grab logged in admin
     const [employees, setEmployees] = useState([]);
-    const [selectedRoleFilter, setSelectedRoleFilter] = useState('all'); // 'all', 'employee', 'closer'
+    const [selectedRoleFilter, setSelectedRoleFilter] = useState('all'); 
     const [selectedEmployee, setSelectedEmployee] = useState('all');
     const [selectedDate, setSelectedDate] = useState(getLocalDateStr());
     
@@ -19,7 +21,6 @@ const AttendanceLogs = () => {
     const [statusMessage, setStatusMessage] = useState(null);
     const [officeSettings, setOfficeSettings] = useState(null);
 
-    // EDIT MODAL STATE
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingLog, setEditingLog] = useState(null);
     const [editCheckIn, setEditCheckIn] = useState('');
@@ -124,14 +125,12 @@ const AttendanceLogs = () => {
             setStatusMessage({ type: 'success', text: `Timesheet securely ${actionType}.` });
             setAttendanceLogs(prevLogs => prevLogs.map(item => item.id === logId ? { ...item, status: actionType } : item));
         } catch (error) {
-            setStatusMessage({ type: 'error', text: `Failed to ${actionType} attendance record.` });
+            setStatusMessage({ type: 'error', text: error.response?.data?.detail || `Failed to ${actionType} attendance record.` });
         }
     };
 
-    // Open Edit Modal with exact Pakistan Time formatting
     const openEditModal = (log) => {
         setEditingLog(log);
-        
         const toPKTInputString = (isoString) => {
             if (!isoString) return '';
             const date = new Date(isoString);
@@ -149,35 +148,29 @@ const AttendanceLogs = () => {
             const getPart = (type) => parts.find(p => p.type === type)?.value || '';
             return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
         };
-
         setEditCheckIn(toPKTInputString(log.check_in));
         setEditCheckOut(toPKTInputString(log.check_out));
         setIsEditModalOpen(true);
     };
 
-    // Save Edited Times hitting backend PUT /api/v1/attendance/{log_id}
     const handleSaveTimes = async (e) => {
         e.preventDefault();
         if (!editingLog) return;
-
         try {
             const formatForBackend = (localDateTimeStr) => {
                 if (!localDateTimeStr) return null;
                 return new Date(`${localDateTimeStr}+05:00`).toISOString();
             };
-
             const payload = {
                 check_in: formatForBackend(editCheckIn),
                 check_out: formatForBackend(editCheckOut)
             };
-
             await apiClient.put(`/api/v1/attendance/${editingLog.id}`, payload);
             setStatusMessage({ type: 'success', text: 'Attendance times updated successfully.' });
             setIsEditModalOpen(false);
             fetchAttendanceData();
         } catch (err) {
-            console.error("Failed to update times", err);
-            setStatusMessage({ type: 'error', text: 'Failed to update attendance times.' });
+            setStatusMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to update attendance times.' });
         }
     };
 
@@ -196,11 +189,11 @@ const AttendanceLogs = () => {
         return { text: `${hrs}h ${mins}m`, mins: diffMins };
     };
 
-    // Filter employees by role
     const filteredEmployeesByRole = employees.filter(emp => {
         if (selectedRoleFilter === 'all') return true;
         if (selectedRoleFilter === 'employee') return emp.role === 'employee';
         if (selectedRoleFilter === 'closer') return emp.role === 'closer';
+        if (selectedRoleFilter === 'admin') return emp.role === 'admin';
         return true;
     });
 
@@ -223,73 +216,51 @@ const AttendanceLogs = () => {
     }
 
     const handleExportCSV = () => {
-    if (displayData.length === 0) {
-        setStatusMessage({ type: 'error', text: 'No data available to export.' });
-        return;
-    }
-
-    // 1. Define CSV headers
-    const headers = ['Date', 'Employee Name', 'Role', 'Check In', 'Check Out', 'Total Time', 'Status'];
-
-    // 2. Map the displayData to match headers
-    const csvRows = displayData.map(({ employee, log, recordDate }) => {
-        const dateStr = recordDate || new Date().toISOString().split('T')[0];
-        const empName = employee?.full_name || 'N/A';
-        const role = employee?.role || 'N/A';
-        
-        let checkInStr = '-';
-        let checkOutStr = '-';
-        let totalTimeStr = '-';
-        let statusStr = 'Not Checked In';
-
-        if (log) {
-            checkInStr = log.check_in ? new Date(log.check_in).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) : '-';
-            checkOutStr = log.check_out ? new Date(log.check_out).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) : '-';
-            statusStr = log.status;
-            
-            // Re-use your time calculation logic here if needed, or pull from existing state
-            const timeObj = calculateTimeSpent(log.check_in ? new Date(log.check_in) : null, log.check_out ? new Date(log.check_out) : null, log.status);
-            totalTimeStr = timeObj.text;
+        if (displayData.length === 0) {
+            setStatusMessage({ type: 'error', text: 'No data available to export.' });
+            return;
         }
+        const headers = ['Date', 'Employee Name', 'Role', 'Check In', 'Check Out', 'Total Time', 'Status'];
+        const csvRows = displayData.map(({ employee, log, recordDate }) => {
+            const dateStr = recordDate || new Date().toISOString().split('T')[0];
+            const empName = employee?.full_name || 'N/A';
+            const role = employee?.role || 'N/A';
+            let checkInStr = '-';
+            let checkOutStr = '-';
+            let totalTimeStr = '-';
+            let statusStr = 'Not Checked In';
 
-        // Escape quotes and commas for safe CSV formatting
-        return [
-            `"${dateStr}"`, 
-            `"${empName}"`, 
-            `"${role}"`, 
-            `"${checkInStr}"`, 
-            `"${checkOutStr}"`, 
-            `"${totalTimeStr}"`, 
-            `"${statusStr}"`
-        ].join(',');
-    });
+            if (log) {
+                checkInStr = log.check_in ? new Date(log.check_in).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) : '-';
+                checkOutStr = log.check_out ? new Date(log.check_out).toLocaleString('en-PK', { timeZone: 'Asia/Karachi' }) : '-';
+                statusStr = log.status;
+                const timeObj = calculateTimeSpent(log.check_in ? new Date(log.check_in) : null, log.check_out ? new Date(log.check_out) : null, log.status);
+                totalTimeStr = timeObj.text;
+            }
 
-    // 3. Combine headers and rows
-    const csvContent = [headers.join(','), ...csvRows].join('\n');
+            return [ `"${dateStr}"`, `"${empName}"`, `"${role}"`, `"${checkInStr}"`, `"${checkOutStr}"`, `"${totalTimeStr}"`, `"${statusStr}"` ].join(',');
+        });
 
-    // 4. Create a Blob and trigger the download
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Attendance_Export_${selectedDate || 'All'}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-};
+        const csvContent = [headers.join(','), ...csvRows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', `Attendance_Export_${selectedDate || 'All'}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
         <PageWrapper title="Attendance Auditing">
             <div className="flex justify-between items-center mb-8 px-2">
-    <h1 className="text-2xl font-bold text-prime-text">Attendance Logs</h1>
-    <button 
-        onClick={handleExportCSV} 
-        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-sm font-bold flex items-center gap-2 transition-colors shadow-sm"
-    >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-        Export CSV
-    </button>
-</div>
+                <h1 className="text-2xl font-bold text-prime-text">Attendance Logs</h1>
+                <button onClick={handleExportCSV} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-full text-sm font-bold flex items-center gap-2 transition-colors shadow-sm">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Export CSV
+                </button>
+            </div>
 
             {statusMessage && (
                 <div className={`px-6 py-3 mb-6 rounded-full text-sm font-medium text-center ${statusMessage.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
@@ -297,7 +268,6 @@ const AttendanceLogs = () => {
                 </div>
             )}
 
-            {/* Edit Times Modal (Portaled to document.body to remain centered and fixed) */}
             {isEditModalOpen && createPortal(
                 <div className="fixed inset-0 bg-gray-900/70 backdrop-blur-md flex items-center justify-center z-[99999] p-4 animate-fade-in">
                     <div className="bg-white rounded-3xl shadow-card max-w-md w-full p-8 border border-prime-border">
@@ -305,36 +275,15 @@ const AttendanceLogs = () => {
                         <form onSubmit={handleSaveTimes} className="space-y-4">
                             <div>
                                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Check-In Time</label>
-                                <input 
-                                    type="datetime-local" 
-                                    value={editCheckIn} 
-                                    onChange={(e) => setEditCheckIn(e.target.value)} 
-                                    className="input-base w-full"
-                                />
+                                <input type="datetime-local" value={editCheckIn} onChange={(e) => setEditCheckIn(e.target.value)} className="input-base w-full"/>
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Check-Out Time</label>
-                                <input 
-                                    type="datetime-local" 
-                                    value={editCheckOut} 
-                                    onChange={(e) => setEditCheckOut(e.target.value)} 
-                                    className="input-base w-full"
-                                />
+                                <input type="datetime-local" value={editCheckOut} onChange={(e) => setEditCheckOut(e.target.value)} className="input-base w-full"/>
                             </div>
                             <div className="flex justify-end gap-3 mt-6">
-                                <button 
-                                    type="button" 
-                                    onClick={() => setIsEditModalOpen(false)} 
-                                    className="px-4 py-2 bg-gray-100 rounded-full text-sm font-bold text-gray-600 hover:bg-gray-200"
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    type="submit" 
-                                    className="px-6 py-2 bg-prime-primary text-white rounded-full text-sm font-bold hover:bg-prime-secondary"
-                                >
-                                    Save Changes
-                                </button>
+                                <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-4 py-2 bg-gray-100 rounded-full text-sm font-bold text-gray-600 hover:bg-gray-200">Cancel</button>
+                                <button type="submit" className="px-6 py-2 bg-prime-primary text-white rounded-full text-sm font-bold hover:bg-prime-secondary">Save Changes</button>
                             </div>
                         </form>
                     </div>
@@ -342,41 +291,28 @@ const AttendanceLogs = () => {
                 document.body
             )}
 
-            {/* FILTERS CARD */}
             <div className="card-base p-6 mb-8 bg-white flex flex-col md:flex-row items-center gap-6">
                 <div className="w-full md:w-1/4">
                     <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Role Filter</label>
-                    <select 
-                        value={selectedRoleFilter} 
-                        onChange={(e) => {
-                            setSelectedRoleFilter(e.target.value);
-                            setSelectedEmployee('all');
-                        }} 
-                        className="input-base cursor-pointer"
-                    >
+                    <select value={selectedRoleFilter} onChange={(e) => { setSelectedRoleFilter(e.target.value); setSelectedEmployee('all'); }} className="input-base cursor-pointer">
                         <option value="all">All Roles</option>
                         <option value="employee">Agent (Employee)</option>
                         <option value="closer">Closer</option>
+                        <option value="admin">Admin</option>
                     </select>
                 </div>
-
                 <div className="flex-1 w-full min-w-[200px]">
                     <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Employee Filter</label>
                     <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="input-base cursor-pointer">
                         <option value="all">All {selectedRoleFilter === 'all' ? 'Employees' : selectedRoleFilter === 'employee' ? 'Agents' : 'Closers'}</option>
-                        {filteredEmployeesByRole.map(emp => (
-                            <option key={emp.id} value={emp.id}>{emp.full_name} ({emp.role.replace('_', ' ')})</option>
-                        ))}
+                        {filteredEmployeesByRole.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name} ({emp.role.replace('_', ' ')})</option>)}
                     </select>
                 </div>
-                
                 <div className="w-full md:w-auto">
                     <div className="flex items-center justify-between mb-2 ml-2">
                         <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider">Date Filter</label>
                         {selectedEmployee !== 'all' && selectedDate && (
-                            <button onClick={() => setSelectedDate('')} className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-wider">
-                                Clear Date
-                            </button>
+                            <button onClick={() => setSelectedDate('')} className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-wider">Clear Date</button>
                         )}
                     </div>
                     <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="input-base shadow-sm !w-full md:!w-fit font-semibold cursor-pointer" />
@@ -448,7 +384,7 @@ const AttendanceLogs = () => {
                                         }
 
                                         if (cOut && !isCheckedIn) {
-                                            if (timeObj.mins < dayProfile.req_hours * 60) isEarlyCheckout = true;
+                                            if (timeObj.mins < Math.floor(dayProfile.req_hours * 60)) isEarlyCheckout = true;
                                         }
                                     }
                                     
@@ -473,42 +409,39 @@ const AttendanceLogs = () => {
                                                 : <span className="px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-[10px] font-bold uppercase">Needs Approval</span>}
                                             </td>
                                             <td className="px-6 py-5 whitespace-nowrap text-right">
-                                                <div className="flex justify-end gap-2 items-center">
-                                                    {/* PENCIL EDIT ICON BUTTON */}
-                                                    <button 
-                                                        onClick={() => openEditModal(log)} 
-                                                        title="Edit Times"
-                                                        className="p-1.5 bg-gray-100 text-gray-600 hover:bg-prime-primary hover:text-white rounded-lg transition-colors"
-                                                    >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                                        </svg>
-                                                    </button>
-
-                                                    {!isCheckedIn && (
-                                                        <>
-                                                            <button onClick={() => handleDirectStatusUpdate(log.id, 'approved')} className="text-green-600 hover:text-green-800 text-xs font-bold uppercase">Approve</button>
-                                                            <button onClick={() => handleDirectStatusUpdate(log.id, 'rejected')} className="text-red-600 hover:text-red-800 text-xs font-bold uppercase mx-1">Reject</button>
-                                                        </>
-                                                    )}
-                                                    
-                                                    {/* REOPEN BUTTON */}
-                                                    {log.status === 'checked_out' && (
-                                                        <button 
-                                                            onClick={async () => {
-                                                                try {
-                                                                    await apiClient.put(`/api/v1/attendance/${log.id}/reopen`);
-                                                                    setAttendanceLogs(prevLogs => prevLogs.map(item => item.id === log.id ? { ...item, check_out: null, status: 'checked_in' } : item));
-                                                                } catch (error) {
-                                                                    console.error("Failed to reopen shift", error);
-                                                                }
-                                                            }} 
-                                                            className="text-blue-600 hover:text-blue-800 text-xs font-bold uppercase ml-1"
-                                                        >
-                                                            Reopen
+                                                {/* 🚨 SECURITY LOCK VISUAL: Hide buttons completely if the Admin tries to edit their own log */}
+                                                {log.employee_id === user?.id ? (
+                                                    <span className="text-xs text-red-400 font-semibold uppercase block mt-2">Cannot Self-Approve</span>
+                                                ) : (
+                                                    <div className="flex justify-end gap-2 items-center">
+                                                        <button onClick={() => openEditModal(log)} title="Edit Times" className="p-1.5 bg-gray-100 text-gray-600 hover:bg-prime-primary hover:text-white rounded-lg transition-colors">
+                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                                         </button>
-                                                    )}
-                                                </div>
+
+                                                        {!isCheckedIn && (
+                                                            <>
+                                                                <button onClick={() => handleDirectStatusUpdate(log.id, 'approved')} className="text-green-600 hover:text-green-800 text-xs font-bold uppercase">Approve</button>
+                                                                <button onClick={() => handleDirectStatusUpdate(log.id, 'rejected')} className="text-red-600 hover:text-red-800 text-xs font-bold uppercase mx-1">Reject</button>
+                                                            </>
+                                                        )}
+                                                        
+                                                        {log.status === 'checked_out' && (
+                                                            <button 
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        await apiClient.put(`/api/v1/attendance/${log.id}/reopen`);
+                                                                        setAttendanceLogs(prevLogs => prevLogs.map(item => item.id === log.id ? { ...item, check_out: null, status: 'checked_in' } : item));
+                                                                    } catch (error) {
+                                                                        console.error("Failed to reopen shift", error);
+                                                                    }
+                                                                }} 
+                                                                className="text-blue-600 hover:text-blue-800 text-xs font-bold uppercase ml-1"
+                                                            >
+                                                                Reopen
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </td>
                                         </tr>
                                     );

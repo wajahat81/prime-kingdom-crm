@@ -71,6 +71,21 @@ const TerminatedEmployees = () => {
         };
     }, []);
 
+
+    const formatCNIC = (value) => {
+    // Remove all non-numeric characters first
+    const cleaned = value.replace(/\D/g, '');
+    
+    // Apply the dashes based on the length of the numbers
+    if (cleaned.length <= 5) {
+        return cleaned;
+    } else if (cleaned.length <= 12) {
+        return `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`;
+    } else {
+        return `${cleaned.slice(0, 5)}-${cleaned.slice(5, 12)}-${cleaned.slice(12, 13)}`;
+    }
+};
+
     const handleRestoreUser = async (userId) => {
         try {
             await apiClient.put(`/api/v1/users/${userId}/restore`, { is_active: true });
@@ -159,15 +174,19 @@ const TerminatedEmployees = () => {
                             />
                         </div>
                         <div>
-                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">CNIC (Unique)</label>
-                            <input 
-                                type="text" 
-                                placeholder="e.g. 35202-1234567-1" 
-                                value={editFormData.cnic} 
-                                onChange={(e) => setEditFormData({ ...editFormData, cnic: e.target.value })} 
-                                className="input-base" 
-                            />
-                        </div>
+    <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">CNIC (Unique)</label>
+    <input 
+        type="text" 
+        placeholder="e.g. 35202-1234567-1" 
+        value={editFormData.cnic} 
+        onChange={(e) => setEditFormData({ 
+            ...editFormData, 
+            cnic: formatCNIC(e.target.value) // 🚨 Wraps the input to format automatically
+        })} 
+        maxLength="15" // 🚨 Stops input after 15 characters total
+        className="input-base" 
+    />
+</div>
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Dialing ID</label>
                             <input 

@@ -93,13 +93,15 @@ const TerminatedEmployees = () => {
     };
 
     const openEditModal = (user) => {
-        setEditingUser(user);
-        setEditFormData({
-            full_name: user.full_name || '',
-            cnic: user.cnic || '',
-            dialing_id: user.dialing_id || ''
-        });
-    };
+    setEditingUser(user);
+    setEditFormData({
+        full_name: user.full_name || '',
+        cnic: user.cnic || '',
+        dialing_id: user.dialing_id || '',
+        role: user.role,       // 🚨 Added to satisfy backend validation
+        email: user.email      // 🚨 Added just in case email is also required
+    });
+};
 
     const handleUpdateUser = async () => {
         setIsSubmitting(true);

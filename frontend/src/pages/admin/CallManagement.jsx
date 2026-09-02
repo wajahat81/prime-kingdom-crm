@@ -16,6 +16,11 @@ const CallManagement = () => {
     const [error, setError] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
 
+    // 🚨 New Filter States
+    const [searchTerm, setSearchTerm] = useState('');
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState('');
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState('add');
     const [currentCallId, setCurrentCallId] = useState(null);
@@ -24,7 +29,8 @@ const CallManagement = () => {
 
     const [formData, setFormData] = useState({
         client_name: '', employee_id: '', status: 'retained', commission: '',
-        handy_id: '', closer_id: '', doc_sign_id: ''
+        handy_id: '', closer_id: '', doc_sign_id: '',
+        date: new Date().toISOString().split('T')[0] // 🚨 Default to today's date
     });
 
     const fetchCallsAndUsers = async () => {
@@ -79,16 +85,52 @@ const CallManagement = () => {
         return call;
     });
 
+    const getEmployeeName = (call) => {
+        if (call.profiles && call.profiles.full_name) return call.profiles.full_name;
+        if (call.employee_name) return call.employee_name;
+        if (call.employee_id) {
+            const foundAgent = agents.find(a => a.id === call.employee_id);
+            if (foundAgent) return foundAgent.full_name || foundAgent.email;
+            return call.employee_id.substring(0, 8) + '...';
+        }
+        return 'Unknown';
+    };
+
+    const getCloserName = (id) => {
+        if (!id) return null;
+        const found = closers.find(c => c.id === id);
+        return found ? (found.full_name || found.email) : 'Unknown';
+    };
+
+    // 🚨 Universal Search & Date Range Filtering Logic
     const filteredCalls = displayCalls.filter(call => {
-        if (statusFilter === 'all') return true;
-        return call.status === statusFilter;
+        if (statusFilter !== 'all' && call.status !== statusFilter) return false;
+
+        const agentName = getEmployeeName(call);
+        const handyName = getCloserName(call.handy_id) || '';
+        const closerName = getCloserName(call.closer_id) || '';
+        const docSignName = getCloserName(call.doc_sign_id) || '';
+        
+        const searchString = `${call.client_name || ''} ${agentName} ${handyName} ${closerName} ${docSignName} ${call.status || ''} ${call.date || ''}`.toLowerCase();
+        const matchesSearch = searchTerm === '' || searchString.includes(searchTerm.toLowerCase());
+
+        // Fallback to created_at if call.date is null, and extract just the 'YYYY-MM-DD' portion
+        const rawDate = call.date || call.created_at;
+        const callDateStr = rawDate ? rawDate.split('T')[0] : '';
+
+        // Direct string comparison prevents timezone bugs (e.g. "2026-09-02" >= "2026-09-01")
+        const matchesFrom = fromDate ? (callDateStr && callDateStr >= fromDate) : true;
+        const matchesTo = toDate ? (callDateStr && callDateStr <= toDate) : true;
+
+        return matchesSearch && matchesFrom && matchesTo;
     });
 
     const handleOpenAdd = () => {
         setModalMode('add');
         setFormData({
             client_name: '', employee_id: '', status: 'retained', commission: '',
-            handy_id: '', closer_id: '', doc_sign_id: ''
+            handy_id: '', closer_id: '', doc_sign_id: '',
+            date: new Date().toISOString().split('T')[0]
         });
         setIsModalOpen(true);
     };
@@ -103,7 +145,8 @@ const CallManagement = () => {
             commission: call.commission || '',
             handy_id: call.handy_id || '',
             closer_id: call.closer_id || '',
-            doc_sign_id: call.doc_sign_id || ''
+            doc_sign_id: call.doc_sign_id || '',
+            date: call.date || new Date().toISOString().split('T')[0]
         });
         setIsModalOpen(true);
     };
@@ -118,7 +161,8 @@ const CallManagement = () => {
                 commission: parseFloat(formData.commission) || 0,
                 handy_id: formData.handy_id || null,
                 closer_id: formData.closer_id || null,
-                doc_sign_id: formData.doc_sign_id || null
+                doc_sign_id: formData.doc_sign_id || null,
+                date: formData.date || new Date().toISOString().split('T')[0]
             };
 
             if (modalMode === 'add') {
@@ -144,39 +188,23 @@ const CallManagement = () => {
         }
     };
 
-    const getEmployeeName = (call) => {
-        if (call.profiles && call.profiles.full_name) return call.profiles.full_name;
-        if (call.employee_name) return call.employee_name;
-        if (call.employee_id) {
-            const foundAgent = agents.find(a => a.id === call.employee_id);
-            if (foundAgent) return foundAgent.full_name || foundAgent.email;
-            return call.employee_id.substring(0, 8) + '...';
-        }
-        return 'Unknown';
-    };
-
-    const getCloserName = (id) => {
-        if (!id) return null;
-        const found = closers.find(c => c.id === id);
-        return found ? (found.full_name || found.email) : 'Unknown';
-    };
-
     const handleExportCSV = () => {
         if (filteredCalls.length === 0) {
             setError('No data available to export.');
             return;
         }
 
-        const headers = ['Client Name', 'Agent', 'Handy', 'Closer', 'Doc Sign', 'Status', 'Commission'];
+        const headers = ['Date', 'Client Name', 'Agent', 'Handy', 'Closer', 'Doc Sign', 'Status', 'Commission'];
         const csvRows = filteredCalls.map((call) => {
             return [
+                `"${call.date || 'N/A'}"`,
                 `"${call.client_name || 'N/A'}"`,
                 `"${getEmployeeName(call)}"`,
                 `"${getCloserName(call.handy_id) || '-'}"`,
                 `"${getCloserName(call.closer_id) || '-'}"`,
                 `"${getCloserName(call.doc_sign_id) || '-'}"`,
                 `"${call.status}"`,
-                `"${call.commission || 0}"` // 🚨 Updated to always export base commission
+                `"${call.commission || 0}"`
             ].join(',');
         });
 
@@ -215,6 +243,11 @@ const CallManagement = () => {
                 <div className="space-y-4 py-2">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Date</label>
+                            <input type="date" name="date" value={formData.date} onChange={handleChange} required className="input-base" />
+                        </div>
+
+                        <div className="md:col-span-2">
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Agent</label>
                             <select name="employee_id" value={formData.employee_id} onChange={handleChange} required className="input-base cursor-pointer">
                                 <option value="">Select Agent...</option>
@@ -237,7 +270,6 @@ const CallManagement = () => {
 
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-1">Commission (Rs. )</label>
-                            {/* 🚨 Removed disabled lock so you can edit the agent's commission on clawed back cases */}
                             <input type="number" step="0.01" min="0" name="commission" value={formData.commission} onChange={handleChange} className="input-base" />
                         </div>
 
@@ -268,7 +300,7 @@ const CallManagement = () => {
                 </div>
             </Modal>
 
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 px-2 gap-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 px-2 gap-4">
                 <div className="flex items-center gap-4">
                     <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Call Logs</h1>
                     <span className="text-[13px] text-gray-500 font-semibold bg-white px-4 py-1.5 rounded-full border border-gray-200 shadow-sm">
@@ -276,7 +308,7 @@ const CallManagement = () => {
                     </span>
                 </div>
 
-                <div className="flex items-center justify-end gap-3 w-full md:w-auto">
+                <div className="flex items-center justify-end gap-3 w-full md:w-auto flex-wrap">
                     <select
                         value={statusFilter}
                         onChange={(e) => setStatusFilter(e.target.value)}
@@ -287,12 +319,7 @@ const CallManagement = () => {
                         {user?.role !== 'employee' && <option value="clawed_back">Clawed Back</option>}
                     </select>
 
-                    {/* 🚨 Updated Button styling to match "Add Log" button */}
-                    <Button
-                        onClick={handleExportCSV}
-                        variant="primary"
-                        className="rounded-full px-4 font-bold shadow-sm text-sm flex items-center gap-2"
-                    >
+                    <Button onClick={handleExportCSV} variant="primary" className="rounded-full px-4 font-bold shadow-sm text-sm flex items-center gap-2">
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                         CSV
                     </Button>
@@ -300,6 +327,54 @@ const CallManagement = () => {
                     <Button onClick={handleOpenAdd} variant="primary" className="rounded-full px-6 font-semibold shadow-sm text-sm whitespace-nowrap">
                         + Add Log
                     </Button>
+                </div>
+            </div>
+
+            {/* 🚨 Filter Toolbar: Universal Search & Date Range Picker */}
+            <div className="card-base mb-6 p-4 bg-white flex flex-col md:flex-row gap-4 items-center justify-between rounded-2xl border border-gray-200 shadow-sm">
+                <div className="relative w-full md:w-1/3">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                    </div>
+                    <input
+                        type="text"
+                        placeholder="Search client, agent, closer, handy..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-prime-primary text-sm"
+                    />
+                </div>
+
+                <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
+                    <div className="flex flex-col">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">From Date</label>
+                        <input
+                            type="date"
+                            value={fromDate}
+                            onChange={(e) => setFromDate(e.target.value)}
+                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-prime-primary"
+                        />
+                    </div>
+                    <span className="text-gray-400 mt-5">-</span>
+                    <div className="flex flex-col">
+                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">To Date</label>
+                        <input
+                            type="date"
+                            value={toDate}
+                            onChange={(e) => setToDate(e.target.value)}
+                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-prime-primary"
+                        />
+                    </div>
+                    {(fromDate || toDate || searchTerm) && (
+                        <button 
+                            onClick={() => { setFromDate(''); setToDate(''); setSearchTerm(''); }}
+                            className="mt-5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
+                        >
+                            Reset
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -312,6 +387,7 @@ const CallManagement = () => {
                     <table className="min-w-full">
                         <thead>
                             <tr className="border-b border-gray-100">
+                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Date</th>
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Client</th>
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Agent</th>
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Support Team</th>
@@ -322,12 +398,13 @@ const CallManagement = () => {
                         </thead>
                         <tbody className="bg-white">
                             {loading ? (
-                                <tr><td colSpan="6" className="px-6 py-20 text-center text-gray-400 text-sm">Loading records...</td></tr>
+                                <tr><td colSpan="7" className="px-6 py-20 text-center text-gray-400 text-sm">Loading records...</td></tr>
                             ) : filteredCalls.length === 0 ? (
-                                <tr><td colSpan="6" className="px-6 py-32 text-center text-gray-400 text-sm font-medium">No records yet.</td></tr>
+                                <tr><td colSpan="7" className="px-6 py-32 text-center text-gray-400 text-sm font-medium">No matching records found.</td></tr>
                             ) : (
                                 filteredCalls.map((call) => (
                                     <tr key={call.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{call.date || 'N/A'}</td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
 
@@ -346,7 +423,6 @@ const CallManagement = () => {
                                             </span>
                                         </td>
 
-                                        {/* 🚨 Updated to output the base commission for both retained and clawed_back statuses */}
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-700 text-sm">
                                             {`Rs. ${parseFloat(call.commission || 0).toFixed(2)}`}
                                         </td>
@@ -372,4 +448,4 @@ const CallManagement = () => {
     );
 };
 
-export default CallManagement;
+export default CallManagement;  

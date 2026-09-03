@@ -6,6 +6,7 @@ import PageWrapper from '../../components/layout/PageWrapper';
 
 const CallLogUpload = () => {
     const [formData, setFormData] = useState({
+        date: new Date().toISOString().split('T')[0], // Defaults to today
         client_name: '',
         employee_id: '',
         status: 'retained',
@@ -63,11 +64,13 @@ const CallLogUpload = () => {
                 commission: formData.commission ? parseFloat(formData.commission) : 0,
                 handy_id: formData.handy_id || null,
                 closer_id: formData.closer_id || null,
-                doc_sign_id: formData.doc_sign_id || null
+                doc_sign_id: formData.doc_sign_id || null,
+                date: formData.date
             });
             setStatusMessage({ type: 'success', text: 'Call logged successfully.' });
 
             setFormData({
+                date: new Date().toISOString().split('T')[0], 
                 client_name: '', employee_id: '', status: 'retained', commission: '', handy_id: '', closer_id: '', doc_sign_id: ''
             });
         } catch (error) {
@@ -112,6 +115,12 @@ const CallLogUpload = () => {
 
                 <form onSubmit={triggerSubmit} className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        
+                        <div className="md:col-span-2">
+                            <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Date</label>
+                            <input type="date" name="date" value={formData.date} onChange={handleChange} required className="input-base" />
+                        </div>
+
                         <div className="md:col-span-2">
                             <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Assigned Agent</label>
                             <select name="employee_id" value={formData.employee_id} onChange={handleChange} required className="input-base cursor-pointer">

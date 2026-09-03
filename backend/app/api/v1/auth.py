@@ -170,3 +170,33 @@ async def change_password(
     except Exception as e:
         logger.error(f"Change password error: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+@router.post("/refresh")
+async def refresh_session(
+    response: Response, 
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        # Generate a brand new token for the active user
+        new_access_token = create_access_token(
+            data={"sub": str(current_user['id']), "role": current_user['role']}
+        )
+        
+        is_production = "primekingdom.org" in str(request.url)
+        
+        # Overwrite the old cookie with the new one, resetting the 12-hour clock
+        response.set_cookie(
+            key="access_token",
+            value=new_access_token, 
+            httponly=True,
+            secure=True,
+            samesite="none",
+            domain=".primekingdom.org" if is_production else None,
+            path="/",
+            max_age=60 * 60 * 12
+        )
+        
+        return {"message": "Session extended"}
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Could not refresh session")

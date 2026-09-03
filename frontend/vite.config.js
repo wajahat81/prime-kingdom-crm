@@ -3,13 +3,19 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  
+  // This block controls your production build
+  build: {
+    sourcemap: false, 
+  },
+  
+  // This block controls your local development server
   server: {
-    host: true, // Needed for Docker to expose the port
+    host: true, 
     port: 5173,
     watch: {
-      usePolling: true, // Forces Vite to actively check for file changes in Docker
+      usePolling: true, 
     },
-    // Optional: If you still have HMR issues, add this to ensure the WebSocket connects
     hmr: {
         clientPort: 5173
     }

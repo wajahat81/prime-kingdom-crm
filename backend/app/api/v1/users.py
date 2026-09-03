@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import date
 from app.db.session import supabase
 from app.core.permissions import require_role
 from app.core.security import get_password_hash
-from app.api.v1.audit import log_audit # <-- IMPORTED HELPER
+from app.api.v1.audit import log_audit 
 import uuid
 
 router = APIRouter()
@@ -18,12 +18,20 @@ class ProfileFullAdminUpdateInternal(BaseModel):
     dialing_id: Optional[str] = None
     joining_date: Optional[date] = None 
     cnic: Optional[str] = None
+    termination_date: Optional[str] = None 
+    termination_reason: Optional[str] = None 
 
-    @field_validator('joining_date', mode='before')
+    # Expand the validator to sanitize all unique or optional fields
+    @field_validator('joining_date', 'dialing_id', 'cnic', 'termination_date', 'termination_reason', mode='before')
     def empty_str_to_none(cls, value):
         if value == "" or value is None:
             return None
         return value
+
+# New schema for capturing termination details
+class TerminateUserRequest(BaseModel):
+    termination_date: str
+    termination_reason: str
 
 @router.get("/")
 async def get_users(
@@ -47,6 +55,7 @@ async def get_terminated_users(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
+        # This will naturally include termination_date and termination_reason due to select('*')
         response = supabase.table('profiles').select('*').eq('is_active', False).execute()
         return {"data": response.data or []}
     except Exception as e:
@@ -59,16 +68,17 @@ async def restore_user(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
+        # Clear out termination data upon restoration
         response = supabase.table('profiles').update({
             "is_active": True,
-            "role": payload.get("role", "employee")
+            "role": payload.get("role", "employee"),
+            "termination_date": None,
+            "termination_reason": None
         }).eq('id', profile_id).execute()
         
-        # LOG ACTIVITY
         restored_name = response.data[0].get('full_name', 'Unknown User') if response.data else profile_id
         restored_did = response.data[0].get('dialing_id', 'None') if response.data else 'None'
         log_audit(current_user['id'], "User Restored", f"Restored user account for {restored_name} (ID: {restored_did})")
-
             
         return {"message": "User successfully restored", "data": response.data}
     except Exception as e:
@@ -86,9 +96,10 @@ async def admin_edit_user_profile(
             "role": profile_update.role,
             "email": profile_update.email,
             "dialing_id": profile_update.dialing_id,
-            # 🚨 FIX: Convert the native Python date object to a JSON-safe string
             "joining_date": profile_update.joining_date.isoformat() if profile_update.joining_date else None,
-            "cnic": profile_update.cnic
+            "cnic": profile_update.cnic,
+            "termination_date": profile_update.termination_date, # <-- Mapped field
+            "termination_reason": profile_update.termination_reason # <-- Mapped field
         }
         
         if profile_update.password and profile_update.password.strip() != "":
@@ -99,7 +110,6 @@ async def admin_edit_user_profile(
         if not response.data:
             raise HTTPException(status_code=404, detail="User profile not found.")
             
-        # LOG ACTIVITY
         did = profile_update.dialing_id or "None"
         log_audit(current_user['id'], "Profile Updated", f"Updated profile for {profile_update.full_name} (ID: {did})")
             
@@ -110,6 +120,7 @@ async def admin_edit_user_profile(
 @router.delete("/{profile_id}")
 async def admin_delete_user_account(
     profile_id: str,
+    payload: TerminateUserRequest, # <-- Added payload mapping
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
@@ -121,16 +132,20 @@ async def admin_delete_user_account(
         if profile_id == current_user['id']:
             raise HTTPException(status_code=403, detail="You cannot delete your own active account.")
         
-        response = supabase.table('profiles').update({"is_active": False, "dialing_id": None}).eq('id', profile_id).execute()
+        # Inject termination details into the database update
+        response = supabase.table('profiles').update({
+            "is_active": False, 
+            "dialing_id": None,
+            "termination_date": payload.termination_date,
+            "termination_reason": payload.termination_reason
+        }).eq('id', profile_id).execute()
             
         if not response.data:
             raise HTTPException(status_code=404, detail="User profile not found.")
             
-        # LOG ACTIVITY
         deleted_name = response.data[0].get('full_name', 'Unknown User')
         deleted_did = response.data[0].get('dialing_id', 'None')
         log_audit(current_user['id'], "User Terminated", f"Archived/Terminated user: {deleted_name} (ID: {deleted_did})")
-
            
         return {"message": "User successfully archived"}
     except Exception as e:
@@ -142,7 +157,6 @@ async def permanent_delete_user_account(
     current_user: dict = Depends(require_role(["super_admin"])) 
 ):
     try:
-        # Fetch name before deleting for the log
         profile_data = supabase.table('profiles').select('full_name, dialing_id').eq('id', profile_id).execute()
         target_name = profile_data.data[0]['full_name'] if profile_data.data else profile_id
         target_did = profile_data.data[0]['dialing_id'] if profile_data.data else "None"
@@ -155,7 +169,6 @@ async def permanent_delete_user_account(
         if not response.data:
             raise HTTPException(status_code=404, detail="User profile not found.")
             
-        # LOG ACTIVITY
         log_audit(current_user['id'], "User Permanently Deleted", f"Permanently deleted user: {target_name} (ID: {target_did}) and all related records")
             
         return {"message": "User permanently deleted from system"}
@@ -174,7 +187,6 @@ async def trust_device(
         if not response.data:
             raise HTTPException(status_code=404, detail="User not found")
             
-        # LOG ACTIVITY
         target_name = response.data[0].get('full_name', 'Unknown User')
         log_audit(current_user['id'], "Device Trusted", f"Generated hardware token for {target_name}")
             

@@ -109,21 +109,12 @@ async def check_out(current_user: dict = Depends(get_current_active_user)):
             raise HTTPException(status_code=400, detail="No active check-in found.")
         
         record = response.data[0]
-        check_in_time = datetime.fromisoformat(record['check_in'].replace('Z', '+00:00'))
+        
+        # Capture the exact time they clicked the button
         current_time = datetime.now(timezone.utc)
-        
-        resolved_rules = get_shift_rules_for_date(today, check_in_time)
-        req_hours = resolved_rules.get("req_hours", 9)
-            
-        max_duration = timedelta(hours=req_hours)
-        
-        if current_time - check_in_time >= max_duration:
-            actual_check_out = (check_in_time + max_duration).isoformat()
-        else:
-            actual_check_out = current_time.isoformat()
             
         update_response = supabase.table('attendance').update({
-            'check_out': actual_check_out,
+            'check_out': current_time.isoformat(),
             'status': 'checked_out'
         }).eq('id', record['id']).execute()
         

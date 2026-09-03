@@ -12,7 +12,8 @@ def create_call_record(call_data, admin_id: str) -> Dict:
         "created_by": admin_id,
         "call_duration": getattr(call_data, 'call_duration', None),
         "commission": None,
-        "created_at": "now()"
+        "created_at": "now()",
+        "date": getattr(call_data, 'date', None) # <-- Add this[cite: 6]
     }
     response = supabase.table('calls').insert(record).execute()
     if response.data:

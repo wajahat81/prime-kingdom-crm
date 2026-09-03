@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { login as loginService } from '../services/authService';
+import apiClient from '../services/apiClient'; // Ensure apiClient is imported for the refresh endpoint
 import { ROLES } from '../utils/constants';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
-    const [token, setToken] = useState(null); // Kept as a dummy value so it doesn't break other components
+    const [token, setToken] = useState(null); 
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        // We no longer check for a stored token, only the stored user object!
         const storedUser = localStorage.getItem('user');
         if (storedUser) {
             try {
@@ -24,20 +24,37 @@ export const AuthProvider = ({ children }) => {
         }
         setLoading(false);
     }, []);
+    
+    // NEW EFFECT: Silent Session Refresh
+    useEffect(() => {
+        if (!user) return; // Only run if a user is actively logged in
+
+        // Ping the refresh endpoint every 4 hours (14,400,000 milliseconds)
+        const refreshInterval = setInterval(async () => {
+            try {
+                await apiClient.post('/api/v1/auth/refresh');
+                console.log('Session silently extended');
+            } catch (error) {
+                console.error('Session refresh failed. Token might be expired.', error);
+                // If the refresh fails (e.g., server restarted, cookie manually deleted), log them out
+                logout(); 
+            }
+        }, 14400000);
+
+        // Cleanup the interval when the component unmounts or user logs out
+        return () => clearInterval(refreshInterval);
+    }, [user]);
 
     const login = async (email, password) => {
         try {
             const response = await loginService(email, password);
             
-            // SECURITY UPDATE: We now check for response.user instead of response.access_token
             if (response.user) {
                 const userData = response.user;
                 
                 setToken('cookie-managed');
                 setUser(userData);
                 localStorage.setItem('user', JSON.stringify(userData));
-                
-                // Note: We no longer set 'access_token' in localStorage because the browser handles the cookie!
                 
                 return { success: true, data: response };
             }
@@ -75,6 +92,8 @@ export const AuthProvider = ({ children }) => {
         setToken(null);
         setUser(null);
         localStorage.removeItem('user');
+        
+        // Optional: Ping a backend logout endpoint here if you want to explicitly invalidate the cookie on the server side
     };
 
     const value = {

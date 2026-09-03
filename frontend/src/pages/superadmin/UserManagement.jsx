@@ -19,24 +19,58 @@ const UserManagement = () => {
     const [editingUser, setEditingUser] = useState(null);
     const [editFormData, setEditFormData] = useState({ full_name: '', joining_date: '', password: '', role: '', dialing_id: '', cnic: '' });
     
+    // 🚨 Termination Modal State
+    const [terminateModal, setTerminateModal] = useState({
+        isOpen: false,
+        userId: null,
+        date: new Date().toISOString().split('T')[0],
+        reason: ''
+    });
+    
     const [status, setStatus] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', action: null });
 
     // Password visibility states
     const [showPassword, setShowPassword] = useState(false);
     const [showEditPassword, setShowEditPassword] = useState(false);
 
-    // 🚨 CNIC Auto-Formatting Helper (15 characters max: 13 digits + 2 dashes)
     const formatCNIC = (value) => {
         const cleaned = value.replace(/\D/g, '');
-        if (cleaned.length <= 5) {
-            return cleaned;
-        } else if (cleaned.length <= 12) {
-            return `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`;
-        } else {
-            return `${cleaned.slice(0, 5)}-${cleaned.slice(5, 12)}-${cleaned.slice(12, 13)}`;
+        if (cleaned.length <= 5) return cleaned;
+        if (cleaned.length <= 12) return `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`;
+        return `${cleaned.slice(0, 5)}-${cleaned.slice(5, 12)}-${cleaned.slice(12, 13)}`;
+    };
+
+    // 🚨 Tenure Calculation Logic
+    const calculateTenure = (joiningDate) => {
+        if (!joiningDate) return 'N/A';
+        const start = new Date(joiningDate);
+        const end = new Date();
+
+        let years = end.getFullYear() - start.getFullYear();
+        let months = end.getMonth() - start.getMonth();
+        let days = end.getDate() - start.getDate();
+
+        if (days < 0) {
+            months--;
+            const previousMonth = new Date(end.getFullYear(), end.getMonth(), 0);
+            days += previousMonth.getDate();
         }
+        if (months < 0) {
+            years--;
+            months += 12;
+        }
+
+        const parts = [];
+        if (years > 0) parts.push(`${years} year${years > 1 ? 's' : ''}`);
+        if (months > 0) parts.push(`${months} month${months > 1 ? 's' : ''}`);
+        if (days > 0) parts.push(`${days} day${days > 1 ? 's' : ''}`);
+
+        if (parts.length > 1) {
+            const last = parts.pop();
+            return `${parts.join(', ')} and ${last}`;
+        }
+        return parts.length > 0 ? parts[0] : '0 days';
     };
 
     const fetchUsers = async () => {
@@ -54,11 +88,7 @@ const UserManagement = () => {
     useEffect(() => { fetchUsers(); }, []);
 
     const handleAddChange = (e) => setFormData({ ...formData, [e.target.name]: e.target.value });
-
-    // 🚨 Specialized handler for CNIC input with auto-formatting
-    const handleAddCnicChange = (e) => {
-        setFormData({ ...formData, cnic: formatCNIC(e.target.value) });
-    };
+    const handleAddCnicChange = (e) => setFormData({ ...formData, cnic: formatCNIC(e.target.value) });
 
     const triggerAddUser = async () => {
         setIsSubmitting(true);
@@ -79,26 +109,34 @@ const UserManagement = () => {
             setStatus({ type: 'error', text: errorMsg });
         } finally {
             setIsSubmitting(false);
-            setConfirmDialog({ isOpen: false, title: '', action: null });
         }
     };
 
-    const triggerDelete = (userId) => {
-        setConfirmDialog({
-            isOpen: true,
-            title: "Archive/Terminate this account?",
-            action: async () => {
-                try {
-                    await apiClient.delete(`/api/v1/users/${userId}`);
-                    setStatus({ type: 'success', text: 'User successfully archived to terminated list.' });
-                    fetchUsers();
-                } catch (error) {
-                    setStatus({ type: 'error', text: 'Failed to archive user.' });
-                } finally {
-                    setConfirmDialog({ isOpen: false, title: '', action: null });
+    // 🚨 Updated Terminate Execution
+    const executeTerminate = async () => {
+        if (!terminateModal.date || !terminateModal.reason) {
+            alert("Please fill out both the termination date and reason.");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            await apiClient.delete(`/api/v1/users/${terminateModal.userId}`, {
+                data: {
+                    termination_date: terminateModal.date,
+                    termination_reason: terminateModal.reason
                 }
-            }
-        });
+            });
+            setStatus({ type: 'success', text: 'User successfully archived to terminated list.' });
+            
+            // Instantly remove user from UI state without waiting for refresh
+            setUsers(users.filter(u => u.id !== terminateModal.userId));
+        } catch (error) {
+            setStatus({ type: 'error', text: 'Failed to archive user.' });
+        } finally {
+            setIsSubmitting(false);
+            setTerminateModal({ isOpen: false, userId: null, date: new Date().toISOString().split('T')[0], reason: '' });
+        }
     };
 
     const openEditModal = (user) => {
@@ -114,11 +152,7 @@ const UserManagement = () => {
     };
 
     const handleEditChange = (e) => setEditFormData({ ...editFormData, [e.target.name]: e.target.value });
-
-    // 🚨 Specialized handler for Edit CNIC input with auto-formatting
-    const handleEditCnicChange = (e) => {
-        setEditFormData({ ...editFormData, cnic: formatCNIC(e.target.value) });
-    };
+    const handleEditCnicChange = (e) => setEditFormData({ ...editFormData, cnic: formatCNIC(e.target.value) });
 
     const handleUpdateUser = async () => {
         setIsSubmitting(true);
@@ -154,13 +188,10 @@ const UserManagement = () => {
     };
 
     const handleTrustDevice = async (userId, userName) => {
-        const confirmAction = window.confirm(
-            `Are you sure you want to lock ${userName}'s account to THIS physical computer?`
-        );
+        const confirmAction = window.confirm(`Are you sure you want to lock ${userName}'s account to THIS physical computer?`);
         if (!confirmAction) return;
 
         const result = await trustDeviceForUser(userId);
-        
         if (result.success) {
             alert(`Success! This computer is now bound to ${userName}. You can safely log out.`);
         } else {
@@ -169,27 +200,50 @@ const UserManagement = () => {
     };
 
     const filteredUsers = users.filter((user) => {
-    const lowerCaseSearch = searchTerm.toLowerCase().trim();
-    if (!lowerCaseSearch) return true;
+        const lowerCaseSearch = searchTerm.toLowerCase().trim();
+        if (!lowerCaseSearch) return true;
 
-    const name = user.full_name?.toLowerCase() || '';
-    const dialingId = user.dialing_id?.toString() || '';
-    const cnic = user.cnic?.toLowerCase() || '';
+        const name = user.full_name?.toLowerCase() || '';
+        const dialingId = user.dialing_id?.toString() || '';
+        const cnic = user.cnic?.toLowerCase() || '';
 
-    // Check if the search term matches part of the name, starts with or matches the dialing ID, or matches CNIC
-    return name.includes(lowerCaseSearch) || dialingId.includes(lowerCaseSearch) || cnic.includes(lowerCaseSearch);
-});
+        return name.includes(lowerCaseSearch) || dialingId.includes(lowerCaseSearch) || cnic.includes(lowerCaseSearch);
+    });
     
     return (
         <PageWrapper title="Manage Users">
+            
+            {/* TERMINATION MODAL */}
             <Modal 
-                isOpen={confirmDialog.isOpen} 
-                onClose={() => setConfirmDialog({ isOpen: false, title: '', action: null })} 
-                title={confirmDialog.title}
-                onConfirm={confirmDialog.action}
-                confirmText="Proceed"
+                isOpen={terminateModal.isOpen} 
+                onClose={() => setTerminateModal({ isOpen: false, userId: null, date: new Date().toISOString().split('T')[0], reason: '' })} 
+                title="Terminate User Account"
+                onConfirm={executeTerminate}
+                confirmText={isSubmitting ? "Terminating..." : "Terminate User"}
             >
-                <p className="text-sm font-medium text-prime-muted">Please confirm you wish to execute this action.</p>
+                <div className="space-y-4 py-2">
+                    <p className="text-sm font-medium text-prime-muted mb-4">Please provide termination details for permanent record.</p>
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Termination Date</label>
+                        <input 
+                            type="date" 
+                            value={terminateModal.date} 
+                            onChange={(e) => setTerminateModal({...terminateModal, date: e.target.value})} 
+                            className="input-base" 
+                            required 
+                        />
+                    </div>
+                    <div>
+    <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Reason for Termination</label>
+    <textarea 
+        value={terminateModal.reason} 
+        onChange={(e) => setTerminateModal({...terminateModal, reason: e.target.value})} 
+        className="input-base min-h-[100px] resize-none rounded-lg p-3" // <-- Added rounded-lg and padding
+        placeholder="e.g., Resignation, Performance Issue, etc." 
+        required 
+    />
+</div>
+                </div>
             </Modal>
 
             {/* CREATE NEW USER MODAL */}
@@ -207,15 +261,7 @@ const UserManagement = () => {
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">CNIC (Unique)</label>
-                        <input 
-                            type="text" 
-                            name="cnic" 
-                            value={formData.cnic} 
-                            onChange={handleAddCnicChange} 
-                            maxLength="15" 
-                            placeholder="e.g. 35202-1234567-1" 
-                            className="input-base" 
-                        />
+                        <input type="text" name="cnic" value={formData.cnic} onChange={handleAddCnicChange} maxLength="15" placeholder="e.g. 35202-1234567-1" className="input-base" />
                     </div>
                     <div>
                         <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Dialing ID (4 Digits)</label>
@@ -237,20 +283,8 @@ const UserManagement = () => {
                     <div>
                         <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Temporary Password</label>
                         <div className="relative">
-                            <input 
-                                type={showPassword ? "text" : "password"} 
-                                name="password" 
-                                value={formData.password} 
-                                onChange={handleAddChange} 
-                                required 
-                                minLength={8} 
-                                className="input-base pr-10" 
-                            />
-                            <button
-                                type="button"
-                                onClick={() => setShowPassword(!showPassword)}
-                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none"
-                            >
+                            <input type={showPassword ? "text" : "password"} name="password" value={formData.password} onChange={handleAddChange} required minLength={8} className="input-base pr-10" />
+                            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none">
                                 {showPassword ? (
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
                                 ) : (
@@ -278,15 +312,7 @@ const UserManagement = () => {
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">CNIC (Unique)</label>
-                            <input 
-                                type="text" 
-                                name="cnic" 
-                                value={editFormData.cnic} 
-                                onChange={handleEditCnicChange} 
-                                maxLength="15" 
-                                placeholder="e.g. 35202-1234567-1" 
-                                className="input-base" 
-                            />
+                            <input type="text" name="cnic" value={editFormData.cnic} onChange={handleEditCnicChange} maxLength="15" placeholder="e.g. 35202-1234567-1" className="input-base" />
                         </div>
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Dialing ID (4 Digits)</label>
@@ -299,19 +325,8 @@ const UserManagement = () => {
                         <div>
                             <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Change Password</label>
                             <div className="relative">
-                                <input 
-                                    type={showEditPassword ? "text" : "password"} 
-                                    name="password" 
-                                    value={editFormData.password} 
-                                    onChange={handleEditChange} 
-                                    placeholder="Enter new password or leave blank" 
-                                    className="input-base pr-10" 
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowEditPassword(!showEditPassword)}
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none"
-                                >
+                                <input type={showEditPassword ? "text" : "password"} name="password" value={editFormData.password} onChange={handleEditChange} placeholder="Enter new password or leave blank" className="input-base pr-10" />
+                                <button type="button" onClick={() => setShowEditPassword(!showEditPassword)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none">
                                     {showEditPassword ? (
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
                                     ) : (
@@ -349,7 +364,6 @@ const UserManagement = () => {
                 </div>
             )}
 
-            {/* FULL-WIDTH USER LIST TABLE CONTAINER */}
             <div className="card-base flex flex-col min-h-[500px] w-full overflow-hidden">
                 <div className="p-4 md:px-6 border-b border-gray-100 bg-gray-50/50">
                     <div className="relative">
@@ -373,6 +387,7 @@ const UserManagement = () => {
                         <thead>
                             <tr className="border-b border-gray-100">
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">User Details</th>
+                                <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Tenure</th>
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Dialing ID</th>
                                 <th className="px-4 md:px-6 py-6 text-left text-[13px] font-bold text-gray-400">Role</th>
                                 <th className="px-4 md:px-6 py-6 text-right text-[13px] font-bold text-gray-400">Actions</th>
@@ -383,9 +398,13 @@ const UserManagement = () => {
                                 <tr key={u.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors group">
                                     <td className="px-4 md:px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm font-bold text-gray-800">{u.full_name || 'N/A'}</div>
-                                        <div className="text-xs font-medium text-gray-500 mt-0.5">Joining Date: {u.joining_date || 'Not Specified'}</div>
+                                        <div className="text-xs font-medium text-gray-500 mt-0.5">Joined: {u.joining_date || 'Not Specified'}</div>
                                     </td>
                                     
+                                    <td className="px-4 md:px-6 py-4 whitespace-nowrap">
+                                        <div className="text-sm font-semibold text-gray-700">{calculateTenure(u.joining_date)}</div>
+                                    </td>
+
                                     <td className="px-4 md:px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-600">
                                         {u.dialing_id ? `#${u.dialing_id}` : '-'}
                                     </td>
@@ -409,7 +428,7 @@ const UserManagement = () => {
                                             {canEditOrDelete(u) && (
                                                 <>
                                                     <button onClick={() => openEditModal(u)} className="text-gray-300 hover:text-prime-primary p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button>
-                                                    <button onClick={() => triggerDelete(u.id)} className="text-gray-300 hover:text-red-500 p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+                                                    <button onClick={() => setTerminateModal({ ...terminateModal, isOpen: true, userId: u.id })} className="text-gray-300 hover:text-red-500 p-2"><svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
                                                 </>
                                             )}
                                         </div>
@@ -419,7 +438,7 @@ const UserManagement = () => {
 
                             {filteredUsers.length === 0 && (
                                 <tr>
-                                    <td colSpan="4" className="px-6 py-12 text-center text-gray-500">
+                                    <td colSpan="5" className="px-6 py-12 text-center text-gray-500">
                                         {searchTerm ? `No users found matching "${searchTerm}"` : 'No users found.'}
                                     </td>
                                 </tr>

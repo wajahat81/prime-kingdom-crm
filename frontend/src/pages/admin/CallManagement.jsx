@@ -16,10 +16,15 @@ const CallManagement = () => {
     const [error, setError] = useState(null);
     const [statusFilter, setStatusFilter] = useState('all');
 
-    // 🚨 New Filter States
+    // Filter & Pagination States
     const [searchTerm, setSearchTerm] = useState('');
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
+    const [specificDate, setSpecificDate] = useState('');
+    
+    const [page, setPage] = useState(1);
+    const [totalRecords, setTotalRecords] = useState(0);
+    const limit = 50;
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState('add');
@@ -30,17 +35,24 @@ const CallManagement = () => {
     const [formData, setFormData] = useState({
         client_name: '', employee_id: '', status: 'retained', commission: '',
         handy_id: '', closer_id: '', doc_sign_id: '',
-        date: new Date().toISOString().split('T')[0] // 🚨 Default to today's date
+        date: new Date().toISOString().split('T')[0] 
     });
 
     const fetchCallsAndUsers = async () => {
         setLoading(true);
         try {
+            // Fetch dynamically based on role
+            const endpoint = user?.role === 'employee' 
+                ? `/api/v1/calls/me?page=${page}&limit=${limit}`
+                : `/api/v1/calls/?page=${page}&limit=${limit}`;
+
             const [callsRes, usersRes] = await Promise.all([
-                apiClient.get('/api/v1/calls/'),
+                apiClient.get(endpoint),
                 apiClient.get('/api/v1/users/')
             ]);
+            
             setCalls(callsRes.data.data || []);
+            setTotalRecords(callsRes.data.total || 0);
 
             const staff = (usersRes.data.data || usersRes.data || []);
             const sortByName = (a, b) => (a.full_name || a.email || '').localeCompare(b.full_name || b.email || '');
@@ -56,9 +68,13 @@ const CallManagement = () => {
         }
     };
 
+    // Refetch when page changes
     useEffect(() => {
         fetchCallsAndUsers();
+    }, [page]);
 
+    // Setup real-time listener ONLY once on mount
+    useEffect(() => {
         const callsChannel = supabase
             .channel('call-management-live')
             .on(
@@ -78,13 +94,6 @@ const CallManagement = () => {
         return () => supabase.removeChannel(callsChannel);
     }, []);
 
-    const displayCalls = calls.map(call => {
-        if (user?.role === 'employee' && call.status === 'clawed_back') {
-            return { ...call, status: 'retained' };
-        }
-        return call;
-    });
-
     const getEmployeeName = (call) => {
         if (call.profiles && call.profiles.full_name) return call.profiles.full_name;
         if (call.employee_name) return call.employee_name;
@@ -102,8 +111,7 @@ const CallManagement = () => {
         return found ? (found.full_name || found.email) : 'Unknown';
     };
 
-    // 🚨 Universal Search & Date Range Filtering Logic
-    const filteredCalls = displayCalls.filter(call => {
+    const filteredCalls = calls.filter(call => {
         if (statusFilter !== 'all' && call.status !== statusFilter) return false;
 
         const agentName = getEmployeeName(call);
@@ -114,15 +122,14 @@ const CallManagement = () => {
         const searchString = `${call.client_name || ''} ${agentName} ${handyName} ${closerName} ${docSignName} ${call.status || ''} ${call.date || ''}`.toLowerCase();
         const matchesSearch = searchTerm === '' || searchString.includes(searchTerm.toLowerCase());
 
-        // Fallback to created_at if call.date is null, and extract just the 'YYYY-MM-DD' portion
         const rawDate = call.date || call.created_at;
         const callDateStr = rawDate ? rawDate.split('T')[0] : '';
 
-        // Direct string comparison prevents timezone bugs (e.g. "2026-09-02" >= "2026-09-01")
         const matchesFrom = fromDate ? (callDateStr && callDateStr >= fromDate) : true;
         const matchesTo = toDate ? (callDateStr && callDateStr <= toDate) : true;
+        const matchesSpecificDate = specificDate ? (callDateStr === specificDate) : true; 
 
-        return matchesSearch && matchesFrom && matchesTo;
+        return matchesSearch && matchesFrom && matchesTo && matchesSpecificDate;
     });
 
     const handleOpenAdd = () => {
@@ -171,6 +178,7 @@ const CallManagement = () => {
                 await apiClient.put(`/api/v1/calls/${currentCallId}`, payload);
             }
             setIsModalOpen(false);
+            fetchCallsAndUsers(); // Refetch to guarantee correct page sync
         } catch (err) {
             setError('Failed to save call log.');
         } finally {
@@ -181,6 +189,7 @@ const CallManagement = () => {
     const executeDelete = async () => {
         try {
             await apiClient.delete(`/api/v1/calls/${confirmDeleteDialog.callId}`);
+            fetchCallsAndUsers();
         } catch (err) {
             setError('Failed to delete call log.');
         } finally {
@@ -304,7 +313,7 @@ const CallManagement = () => {
                 <div className="flex items-center gap-4">
                     <h1 className="text-2xl font-bold text-gray-800 tracking-tight">Call Logs</h1>
                     <span className="text-[13px] text-gray-500 font-semibold bg-white px-4 py-1.5 rounded-full border border-gray-200 shadow-sm">
-                        {filteredCalls.length} Records
+                        {totalRecords} Total Records
                     </span>
                 </div>
 
@@ -330,9 +339,8 @@ const CallManagement = () => {
                 </div>
             </div>
 
-            {/* 🚨 Filter Toolbar: Universal Search & Date Range Picker */}
             <div className="card-base mb-6 p-4 bg-white flex flex-col md:flex-row gap-4 items-center justify-between rounded-2xl border border-gray-200 shadow-sm">
-                <div className="relative w-full md:w-1/3">
+                <div className="relative w-full md:w-1/4">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -340,36 +348,59 @@ const CallManagement = () => {
                     </div>
                     <input
                         type="text"
-                        placeholder="Search client, agent, closer, handy..."
+                        placeholder="Search current page..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg w-full focus:outline-none focus:ring-2 focus:ring-prime-primary text-sm"
                     />
                 </div>
 
-                <div className="flex items-center gap-2 w-full md:w-auto flex-wrap">
-                    <div className="flex flex-col">
-                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">From Date</label>
+                <div className="flex items-center gap-4 w-full md:w-auto flex-wrap">
+                    <div className="flex flex-col border-r border-gray-200 pr-4">
+                        <label className="text-[10px] font-bold text-prime-primary uppercase mb-1">Specific Date</label>
                         <input
                             type="date"
-                            value={fromDate}
-                            onChange={(e) => setFromDate(e.target.value)}
+                            value={specificDate}
+                            onChange={(e) => {
+                                setSpecificDate(e.target.value);
+                                setFromDate('');
+                                setToDate('');
+                            }}
                             className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-prime-primary"
                         />
                     </div>
-                    <span className="text-gray-400 mt-5">-</span>
-                    <div className="flex flex-col">
-                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">To Date</label>
-                        <input
-                            type="date"
-                            value={toDate}
-                            onChange={(e) => setToDate(e.target.value)}
-                            className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-prime-primary"
-                        />
+
+                    <div className="flex items-center gap-2">
+                        <div className="flex flex-col">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">From</label>
+                            <input
+                                type="date"
+                                value={fromDate}
+                                onChange={(e) => {
+                                    setFromDate(e.target.value);
+                                    setSpecificDate(''); 
+                                }}
+                                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-prime-primary"
+                            />
+                        </div>
+                        <span className="text-gray-400 mt-5">-</span>
+                        <div className="flex flex-col">
+                            <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">To</label>
+                            <input
+                                type="date"
+                                value={toDate}
+                                onChange={(e) => {
+                                    setToDate(e.target.value);
+                                    setSpecificDate(''); 
+                                }}
+                                className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-prime-primary"
+                            />
+                        </div>
                     </div>
-                    {(fromDate || toDate || searchTerm) && (
+
+                    {(fromDate || toDate || searchTerm || specificDate) && (
                         <button 
-                            onClick={() => { setFromDate(''); setToDate(''); setSearchTerm(''); }}
+                            onClick={() => { setFromDate(''); setToDate(''); setSearchTerm(''); setSpecificDate(''); }}
                             className="mt-5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
                         >
                             Reset
@@ -443,9 +474,32 @@ const CallManagement = () => {
                         </tbody>
                     </table>
                 </div>
+                
+                {/* 🚨 Pagination Controls Footer */}
+                <div className="flex justify-between items-center px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl mt-auto">
+                    <span className="text-xs text-gray-500 font-medium">Page {page} • Showing {calls.length} of {totalRecords} records</span>
+                    <div className="flex gap-2">
+                        <Button 
+                            disabled={page === 1} 
+                            onClick={() => setPage(page - 1)} 
+                            variant="secondary" 
+                            className="px-4 py-1.5 text-xs font-semibold shadow-sm"
+                        >
+                            Previous
+                        </Button>
+                        <Button 
+                            disabled={calls.length < limit || calls.length === 0} 
+                            onClick={() => setPage(page + 1)} 
+                            variant="secondary" 
+                            className="px-4 py-1.5 text-xs font-semibold shadow-sm"
+                        >
+                            Next
+                        </Button>
+                    </div>
+                </div>
             </div>
         </PageWrapper>
     );
 };
 
-export default CallManagement;  
+export default CallManagement;

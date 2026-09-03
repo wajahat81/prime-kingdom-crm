@@ -1,9 +1,10 @@
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from typing import List, Optional
 from pydantic import BaseModel 
 from app.core.permissions import get_current_active_user, require_role
 from app.db.session import supabase
-from app.api.v1.audit import log_audit # <-- IMPORTED HELPER
+from app.api.v1.audit import log_audit 
 import logging
 import uuid 
 
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 class FullCallUpdate(BaseModel):
+    date: Optional[str] = None
     client_name: str
     employee_id: str
     status: str
@@ -27,6 +29,7 @@ async def upload_call_log(
 ):
     try:
         new_record = {
+            "date": call_in.get("date"),
             "id": str(uuid.uuid4()),
             "client_name": call_in.get("client_name"),
             "employee_id": call_in.get("employee_id"),
@@ -43,7 +46,6 @@ async def upload_call_log(
         if not response.data:
             raise HTTPException(status_code=500, detail="Failed to insert call log into database.")
             
-        # 🚨 LOG ACTIVITY
         log_audit(
             admin_id=current_user['id'], 
             action_type="Call Log Created", 
@@ -58,27 +60,45 @@ async def upload_call_log(
         raise HTTPException(status_code=500, detail=str(e))
     
 @router.get("/me")
-async def get_my_calls(current_user: dict = Depends(get_current_active_user)):
+async def get_my_calls(
+    page: int = 1, 
+    limit: int = 50,
+    current_user: dict = Depends(get_current_active_user)
+):
     try:
         user_id = current_user['id']
         query = f"employee_id.eq.{user_id},handy_id.eq.{user_id},closer_id.eq.{user_id},doc_sign_id.eq.{user_id}"
+        offset = (page - 1) * limit
         
-        response = supabase.table('calls').select('*').or_(query).order('created_at', desc=True).execute()
-        return {"data": response.data or []}
+        # Added exact count to help frontend pagination
+        response = supabase.table('calls').select('*', count='exact').or_(query).order('created_at', desc=True).range(offset, offset + limit - 1).execute()
+        
+        calls = response.data or []
+        
+        # SECURE MASKING: Change 'clawed_back' to 'retained' before it leaves the server
+        for call in calls:
+            if call.get('status') == 'clawed_back':
+                call['status'] = 'retained'
+                
+        return {"data": calls, "total": response.count, "page": page, "limit": limit}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/")
 async def get_all_calls_endpoint(
+    page: int = 1, 
+    limit: int = 50,
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
+        offset = (page - 1) * limit
         response = supabase.table('calls') \
-            .select('*, profiles!calls_employee_id_fkey(full_name)') \
-            .order('created_at', desc=True).execute()
+            .select('*, profiles!calls_employee_id_fkey(full_name)', count='exact') \
+            .order('created_at', desc=True) \
+            .range(offset, offset + limit - 1).execute()
         
         calls = response.data if response.data else []
-        return {"data": calls}
+        return {"data": calls, "total": response.count, "page": page, "limit": limit}
     except Exception as e:
         logger.error(f"Get all calls error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -90,10 +110,8 @@ async def full_edit_call_log(
     current_user: dict = Depends(require_role(["admin", "super_admin"]))
 ):
     try:
-        update_dict = call_update.dict()
-        
-        # 🚨 FIX: Removed the override that forced commission to 0.0. 
-        # The base commission stays intact, and the frontend Dashboard handles the split.
+        # exclude_unset=True keeps explicit nulls (to unassign users) but ignores entirely missing fields
+        update_dict = call_update.dict(exclude_unset=True)
             
         response = supabase.table('calls') \
             .update(update_dict) \
@@ -103,11 +121,10 @@ async def full_edit_call_log(
         if not response.data:
             raise HTTPException(status_code=404, detail="Call record not found.")
             
-        # LOG ACTIVITY
         log_audit(
             admin_id=current_user['id'], 
             action_type="Call Log Edited", 
-            description=f"Updated call record for client: {update_dict['client_name']}"
+            description=f"Updated call record for client: {update_dict.get('client_name', 'Unknown')}"
         )
             
         return {"message": "Call log updated securely", "data": response.data[0]}
@@ -121,7 +138,6 @@ async def delete_call_log(
     current_user: dict = Depends(require_role(["admin", "super_admin"])) 
 ):
     try:
-        # Fetch client name before deleting for the log
         call_data = supabase.table('calls').select('client_name').eq('id', call_id).execute()
         target_client = call_data.data[0]['client_name'] if call_data.data else call_id
 
@@ -130,7 +146,6 @@ async def delete_call_log(
         if not response.data:
              raise HTTPException(status_code=404, detail="Call record not found.")
              
-        # 🚨 LOG ACTIVITY WITH CLIENT NAME
         log_audit(
             admin_id=current_user['id'], 
             action_type="Call Log Deleted", 

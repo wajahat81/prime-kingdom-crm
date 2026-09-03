@@ -11,7 +11,12 @@ const TerminatedEmployees = () => {
     const [searchTerm, setSearchTerm] = useState('');
 
     const [editingUser, setEditingUser] = useState(null);
-    const [editFormData, setEditFormData] = useState({ full_name: '', cnic: '', dialing_id: '' });
+    const [editFormData, setEditFormData] = useState({ 
+        full_name: '', 
+        termination_date: '', 
+        termination_reason: '', 
+        dialing_id: '' 
+    });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -38,8 +43,6 @@ const TerminatedEmployees = () => {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'profiles' },
                 (payload) => {
-                    console.log('Live Profile Change:', payload);
-                    
                     setTerminatedList((prevList) => {
                         const updatedUser = payload.new;
                         const oldUser = payload.old;
@@ -57,7 +60,6 @@ const TerminatedEmployees = () => {
                         } else if (payload.eventType === 'INSERT' && updatedUser.is_active === false) {
                             return [updatedUser, ...prevList];
                         } else if (payload.eventType === 'DELETE') {
-                            // 🚨 THE FIX: Use !== so it keeps everyone EXCEPT the deleted user
                             return prevList.filter(u => u.id !== oldUser.id);
                         }
                         return prevList;
@@ -70,21 +72,6 @@ const TerminatedEmployees = () => {
             supabase.removeChannel(terminatedChannel);
         };
     }, []);
-
-
-    const formatCNIC = (value) => {
-    // Remove all non-numeric characters first
-    const cleaned = value.replace(/\D/g, '');
-    
-    // Apply the dashes based on the length of the numbers
-    if (cleaned.length <= 5) {
-        return cleaned;
-    } else if (cleaned.length <= 12) {
-        return `${cleaned.slice(0, 5)}-${cleaned.slice(5)}`;
-    } else {
-        return `${cleaned.slice(0, 5)}-${cleaned.slice(5, 12)}-${cleaned.slice(12, 13)}`;
-    }
-};
 
     const handleRestoreUser = async (userId) => {
         try {
@@ -111,33 +98,40 @@ const TerminatedEmployees = () => {
     setEditingUser(user);
     setEditFormData({
         full_name: user.full_name || '',
-        cnic: user.cnic || '',
+        termination_date: user.termination_date || '',
+        termination_reason: user.termination_reason || '',
         dialing_id: user.dialing_id || '',
-        role: user.role,       // 🚨 Added to satisfy backend validation
-        email: user.email      // 🚨 Added just in case email is also required
+        role: user.role || 'employee',       // Required by backend
+        email: user.email || null           // Required by backend
     });
 };
 
     const handleUpdateUser = async () => {
         setIsSubmitting(true);
         try {
-            await apiClient.put(`/api/v1/users/${editingUser.id}`, editFormData);
+            // Convert empty strings to null to prevent database unique constraint errors
+            const payload = { ...editFormData };
+            if (!payload.dialing_id) payload.dialing_id = null;
+            if (!payload.cnic) payload.cnic = null;
+            if (!payload.termination_date) payload.termination_date = null;
+            if (!payload.termination_reason) payload.termination_reason = null;
+
+            await apiClient.put(`/api/v1/users/${editingUser.id}`, payload);
             setMessage({ type: 'success', text: 'Terminated profile updated successfully.' });
             setEditingUser(null);
-            // No need to call fetchTerminatedUsers() here since the WebSocket handles it!
         } catch (err) {
             setMessage({ type: 'error', text: 'Failed to update user profile.' });
         } finally {
             setIsSubmitting(false);
         }
     };
-
     const filteredTerminatedList = terminatedList.filter(user => {
         const query = searchTerm.toLowerCase();
         const matchName = user.full_name?.toLowerCase().includes(query);
-        const matchCnic = user.cnic?.toLowerCase().includes(query);
+        const matchDate = user.termination_date?.toLowerCase().includes(query);
+        const matchReason = user.termination_reason?.toLowerCase().includes(query);
         const matchDialingId = user.dialing_id?.toString().includes(query);
-        return matchName || matchCnic || matchDialingId;
+        return matchName || matchDate || matchReason || matchDialingId;
     });
 
     return (
@@ -174,28 +168,24 @@ const TerminatedEmployees = () => {
                             />
                         </div>
                         <div>
-    <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">CNIC (Unique)</label>
-    <input 
-        type="text" 
-        placeholder="e.g. 35202-1234567-1" 
-        value={editFormData.cnic} 
-        onChange={(e) => setEditFormData({ 
-            ...editFormData, 
-            cnic: formatCNIC(e.target.value) // 🚨 Wraps the input to format automatically
-        })} 
-        maxLength="15" // 🚨 Stops input after 15 characters total
-        className="input-base" 
-    />
-</div>
-                        <div>
-                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Dialing ID</label>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Termination Date</label>
                             <input 
-                                type="text" 
-                                value={editFormData.dialing_id} 
-                                onChange={(e) => setEditFormData({ ...editFormData, dialing_id: e.target.value })} 
+                                type="date" 
+                                value={editFormData.termination_date} 
+                                onChange={(e) => setEditFormData({ ...editFormData, termination_date: e.target.value })} 
                                 className="input-base" 
                             />
                         </div>
+                        <div>
+                            <label className="block text-xs font-semibold text-prime-muted uppercase mb-2 ml-1">Reason</label>
+                            <input 
+                                type="text" 
+                                value={editFormData.termination_reason} 
+                                onChange={(e) => setEditFormData({ ...editFormData, termination_reason: e.target.value })} 
+                                className="input-base" 
+                            />
+                        </div>
+                        
                     </div>
                 )}
             </Modal>
@@ -223,7 +213,7 @@ const TerminatedEmployees = () => {
                         </div>
                         <input
                             type="text"
-                            placeholder="Search by Name, CNIC, or Dialing ID..."
+                            placeholder="Search by Name, Date, Reason, or Dialing ID..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg w-full sm:w-2/3 focus:outline-none focus:ring-2 focus:ring-prime-primary focus:border-transparent text-sm transition-all"
@@ -236,9 +226,9 @@ const TerminatedEmployees = () => {
                         <thead>
                             <tr className="border-b border-gray-100 bg-gray-50/50">
                                 <th className="px-6 py-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Employee Name</th>
-                                <th className="px-6 py-5 text-xs font-bold text-gray-400 uppercase tracking-wider">CNIC</th>
-                                <th className="px-6 py-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Email</th>
-                                <th className="px-6 py-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Dialing ID</th>
+                                <th className="px-6 py-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Termination Date</th>
+                                <th className="px-6 py-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Reason</th>
+                                
                                 <th className="px-6 py-5 text-xs font-bold text-gray-400 uppercase tracking-wider">Status</th>
                                 <th className="px-6 py-5 text-right text-[13px] font-bold text-gray-400 uppercase tracking-wider">Actions</th>
                             </tr>
@@ -252,9 +242,9 @@ const TerminatedEmployees = () => {
                                 filteredTerminatedList.map(emp => (
                                     <tr key={emp.id} className="hover:bg-gray-50/50 transition-colors">
                                         <td className="px-6 py-5 whitespace-nowrap text-sm font-bold text-gray-800">{emp.full_name || 'N/A'}</td>
-                                        <td className="px-6 py-5 whitespace-nowrap text-sm font-semibold text-gray-600">{emp.cnic || 'Not Provided'}</td>
-                                        <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-600">{emp.email}</td>
-                                        <td className="px-6 py-5 whitespace-nowrap text-sm text-gray-600">{emp.dialing_id ? `#${emp.dialing_id}` : 'Released'}</td>
+                                        <td className="px-6 py-5 whitespace-nowrap text-sm font-semibold text-gray-600">{emp.termination_date || 'N/A'}</td>
+                                        <td className="px-6 py-5 text-sm text-gray-600 max-w-[250px] truncate" title={emp.termination_reason}>{emp.termination_reason || 'Not Specified'}</td>
+                                        
                                         <td className="px-6 py-5 whitespace-nowrap">
                                             <span className="px-3 py-1 bg-red-100 text-red-700 rounded-full text-[10px] font-bold uppercase">Terminated</span>
                                         </td>

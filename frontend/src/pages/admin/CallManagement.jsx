@@ -96,26 +96,22 @@ const CallManagement = () => {
     }, []);
 
     const getEmployeeName = (call) => {
-    let name = 'Unknown';
-    let dialingId = null;
+        const agentId = call.employee_id;
+        if (!agentId) return call.employee_name || 'Unknown';
 
-    if (call.profiles && call.profiles.full_name) {
-        name = call.profiles.full_name;
-        dialingId = call.profiles.dialing_id;
-    } else if (call.employee_name) {
-        name = call.employee_name;
-    } else if (call.employee_id) {
-        const foundAgent = agents.find(a => a.id === call.employee_id);
-        if (foundAgent) {
-            name = foundAgent.full_name || foundAgent.email;
-            dialingId = foundAgent.dialing_id;
-        } else {
-            return call.employee_id.substring(0, 8) + '...';
+        const found = agents.find(a => a.id === agentId) || closers.find(c => c.id === agentId);
+        if (!found) {
+            if (call.profiles && call.profiles.full_name) {
+                const name = call.profiles.full_name;
+                const dialingId = call.profiles.dialing_id;
+                return dialingId ? `${name} (#${dialingId})` : name;
+            }
+            return call.employee_name || agentId.substring(0, 8) + '...';
         }
-    }
 
-    return dialingId ? `${name} (#${dialingId})` : name;
-};
+        const name = found.full_name || found.email;
+        return found.dialing_id ? `${name} (#${found.dialing_id})` : name;
+    };
 
 const getCloserName = (id) => {
     if (!id) return null;

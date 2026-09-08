@@ -454,8 +454,8 @@ const CallManagement = () => {
 
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap">
                                             <div className="flex flex-col gap-1 text-[11px] font-medium text-gray-500">
-                                                {call.handy_id && <span><b className="text-prime-primary mr-1">H :</b> {getCloserName(call.handy_id)}</span>}
-                                                {call.closer_id && <span><b className="text-prime-primary mr-1">C :</b> {getCloserName(call.closer_id)}</span>}
+                                                {call.handy_id && <span><b className="text-prime-primary mr-1">H  :</b> {getCloserName(call.handy_id)}</span>}
+                                                {call.closer_id && <span><b className="text-prime-primary mr-1">C  :</b> {getCloserName(call.closer_id)}</span>}
                                                 {call.doc_sign_id && <span><b className="text-prime-primary mr-1">DS:</b> {getCloserName(call.doc_sign_id)}</span>}
                                                 {!call.handy_id && !call.closer_id && !call.doc_sign_id && <span className="text-gray-300">-</span>}
                                             </div>

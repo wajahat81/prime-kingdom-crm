@@ -95,21 +95,35 @@ const CallManagement = () => {
     }, []);
 
     const getEmployeeName = (call) => {
-        if (call.profiles && call.profiles.full_name) return call.profiles.full_name;
-        if (call.employee_name) return call.employee_name;
-        if (call.employee_id) {
-            const foundAgent = agents.find(a => a.id === call.employee_id);
-            if (foundAgent) return foundAgent.full_name || foundAgent.email;
+    let name = 'Unknown';
+    let dialingId = null;
+
+    if (call.profiles && call.profiles.full_name) {
+        name = call.profiles.full_name;
+        dialingId = call.profiles.dialing_id;
+    } else if (call.employee_name) {
+        name = call.employee_name;
+    } else if (call.employee_id) {
+        const foundAgent = agents.find(a => a.id === call.employee_id);
+        if (foundAgent) {
+            name = foundAgent.full_name || foundAgent.email;
+            dialingId = foundAgent.dialing_id;
+        } else {
             return call.employee_id.substring(0, 8) + '...';
         }
-        return 'Unknown';
-    };
+    }
 
-    const getCloserName = (id) => {
-        if (!id) return null;
-        const found = closers.find(c => c.id === id);
-        return found ? (found.full_name || found.email) : 'Unknown';
-    };
+    return dialingId ? `${name} (#${dialingId})` : name;
+};
+
+const getCloserName = (id) => {
+    if (!id) return null;
+    const found = closers.find(c => c.id === id);
+    if (!found) return 'Unknown';
+    
+    const name = found.full_name || found.email;
+    return found.dialing_id ? `${name} (#${found.dialing_id})` : name;
+};
 
     const filteredCalls = calls.filter(call => {
         if (statusFilter !== 'all' && call.status !== statusFilter) return false;
@@ -435,40 +449,42 @@ const CallManagement = () => {
                             ) : (
                                 filteredCalls.map((call) => (
                                     <tr key={call.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
-                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{call.date || 'N/A'}</td>
-                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
-                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
+    <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">
+        {formatDate(call.date)}
+    </td>
+    <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
+    <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
 
-                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap">
-                                            <div className="flex flex-col gap-1 text-[11px] font-medium text-gray-500">
-                                                {call.handy_id && <span><b className="text-prime-primary mr-1">H:</b> {getCloserName(call.handy_id)}</span>}
-                                                {call.closer_id && <span><b className="text-prime-primary mr-1">C:</b> {getCloserName(call.closer_id)}</span>}
-                                                {call.doc_sign_id && <span><b className="text-prime-primary mr-1">DS:</b> {getCloserName(call.doc_sign_id)}</span>}
-                                                {!call.handy_id && !call.closer_id && !call.doc_sign_id && <span className="text-gray-300">-</span>}
-                                            </div>
-                                        </td>
+    <td className="px-4 md:px-6 py-5 whitespace-nowrap">
+        <div className="flex flex-col gap-1 text-[11px] font-medium text-gray-500">
+            {call.handy_id && <span><b className="text-prime-primary mr-1">H:</b> {getCloserName(call.handy_id)}</span>}
+            {call.closer_id && <span><b className="text-prime-primary mr-1">C:</b> {getCloserName(call.closer_id)}</span>}
+            {call.doc_sign_id && <span><b className="text-prime-primary mr-1">DS:</b> {getCloserName(call.doc_sign_id)}</span>}
+            {!call.handy_id && !call.closer_id && !call.doc_sign_id && <span className="text-gray-300">-</span>}
+        </div>
+    </td>
 
-                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap">
-                                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${call.status === 'retained' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-                                                {call.status.replace('_', ' ')}
-                                            </span>
-                                        </td>
+    <td className="px-4 md:px-6 py-5 whitespace-nowrap">
+        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${call.status === 'retained' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+            {call.status.replace('_', ' ')}
+        </span>
+    </td>
 
-                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-700 text-sm">
-                                            {`Rs. ${parseFloat(call.commission || 0).toFixed(2)}`}
-                                        </td>
+    <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-700 text-sm">
+        {`Rs. ${parseFloat(call.commission || 0).toFixed(2)}`}
+    </td>
 
-                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-right">
-                                            <div className="flex justify-end gap-2 items-center">
-                                                <button onClick={() => handleOpenEdit(call)} className="text-gray-400 hover:text-prime-primary p-2">
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                                </button>
-                                                <button onClick={() => setConfirmDeleteDialog({ isOpen: true, callId: call.id })} className="text-gray-400 hover:text-red-500 p-2">
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </tr>
+    <td className="px-4 md:px-6 py-5 whitespace-nowrap text-right">
+        <div className="flex justify-end gap-2 items-center">
+            <button onClick={() => handleOpenEdit(call)} className="text-gray-400 hover:text-prime-primary p-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+            </button>
+            <button onClick={() => setConfirmDeleteDialog({ isOpen: true, callId: call.id })} className="text-gray-400 hover:text-red-500 p-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
+        </div>
+    </td>
+</tr>
                                 ))
                             )}
                         </tbody>

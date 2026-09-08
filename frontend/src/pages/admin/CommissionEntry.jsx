@@ -7,7 +7,7 @@ const CommissionEntry = () => {
         total_retained_calls: 0,
         month: new Date().toISOString().slice(0, 7) // YYYY-MM format
     });
-    
+
     const [employees, setEmployees] = useState([]);
     const [status, setStatus] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,12 +35,12 @@ const CommissionEntry = () => {
             const response = await apiClient.post('/api/v1/commissions/', formData);
             setStatus({ type: 'success', text: 'Commission successfully logged.' });
             setPayoutResult(response.data.data.payout_amount);
-            
+
             setFormData(prev => ({ ...prev, total_retained_calls: 0 }));
         } catch (error) {
-            setStatus({ 
-                type: 'error', 
-                text: error.response?.data?.detail || 'Failed to process commission.' 
+            setStatus({
+                type: 'error',
+                text: error.response?.data?.detail || 'Failed to process commission.'
             });
         } finally {
             setIsSubmitting(false);
@@ -50,7 +50,7 @@ const CommissionEntry = () => {
     return (
         <div className="max-w-2xl mx-auto p-8 mt-10 bg-white rounded-lg shadow-md border-t-4 border-green-600">
             <h2 className="text-2xl font-bold text-gray-800 mb-6">Process Agent Commission</h2>
-            
+
             {status && (
                 <div className={`p-4 mb-6 rounded ${status.type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                     {status.text}
@@ -61,9 +61,9 @@ const CommissionEntry = () => {
                 <div className="grid grid-cols-2 gap-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Agent</label>
-                        <select 
-                            name="employee_id" 
-                            value={formData.employee_id} 
+                        <select
+                            name="employee_id"
+                            value={formData.employee_id}
                             onChange={handleChange}
                             required
                             className="w-full p-2 border border-gray-300 rounded focus:ring-green-500 focus:border-green-500"
@@ -76,10 +76,10 @@ const CommissionEntry = () => {
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">Billing Month</label>
-                        <input 
-                            type="month" 
-                            name="month" 
-                            value={formData.month} 
+                        <input
+                            type="month"
+                            name="month"
+                            value={formData.month}
                             onChange={handleChange}
                             required
                             className="w-full p-2 border border-gray-300 rounded focus:ring-green-500 focus:border-green-500"
@@ -89,10 +89,10 @@ const CommissionEntry = () => {
 
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">Total Retained Calls</label>
-                    <input 
-                        type="number" 
-                        name="total_retained_calls" 
-                        value={formData.total_retained_calls} 
+                    <input
+                        type="number"
+                        name="total_retained_calls"
+                        value={formData.total_retained_calls}
                         onChange={handleChange}
                         required
                         min="0"
@@ -100,8 +100,8 @@ const CommissionEntry = () => {
                     />
                 </div>
 
-                <button 
-                    type="submit" 
+                <button
+                    type="submit"
                     disabled={isSubmitting}
                     className="w-full bg-green-600 text-white font-bold py-2 px-4 rounded hover:bg-green-700 disabled:opacity-50"
                 >
@@ -112,7 +112,7 @@ const CommissionEntry = () => {
             {payoutResult !== null && (
                 <div className="mt-8 p-6 bg-gray-50 border border-gray-200 rounded-lg text-center">
                     <h3 className="text-gray-500 text-sm font-bold uppercase tracking-wide">Final Calculated Payout</h3>
-                    <p className="text-4xl font-extrabold text-green-600 mt-2">${payoutResult.toFixed(2)}</p>
+                    <p className="text-4xl font-extrabold text-green-600 mt-2">${payoutResult}</p>
                 </div>
             )}
         </div>

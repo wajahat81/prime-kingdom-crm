@@ -42,22 +42,22 @@ const CommissionFormulaBuilder = () => {
                         <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">
                             Base Payout per Retained Call ($)
                         </label>
-                        <input 
-                            type="number" 
+                        <input
+                            type="number"
                             step="0.01"
-                            value={payoutPerCall} 
+                            value={payoutPerCall}
                             onChange={(e) => setPayoutPerCall(parseFloat(e.target.value))}
                             required
                             className="input-base font-mono text-center text-xl font-bold text-prime-primary"
                         />
                         <div className="mt-4 p-5 bg-gray-50 rounded-2xl border border-gray-100 text-center">
                             <p className="text-[11px] font-bold text-prime-muted uppercase tracking-wider mb-1">Calculation Example</p>
-                            <p className="text-sm text-prime-text font-medium">100 retained calls × <span className="font-bold text-prime-primary">${payoutPerCall.toFixed(2)}</span> = <strong className="text-prime-text">${(100 * payoutPerCall).toFixed(2)}</strong> payout.</p>
+                            <p className="text-sm text-prime-text font-medium">100 retained calls × <span className="font-bold text-prime-primary">${payoutPerCall}</span> = <strong className="text-prime-text">${(100 * payoutPerCall)}</strong> payout.</p>
                         </div>
                     </div>
 
-                    <Button 
-                        type="submit" 
+                    <Button
+                        type="submit"
                         disabled={isSubmitting}
                         variant="primary"
                         className="w-full py-3"

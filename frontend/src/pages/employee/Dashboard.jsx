@@ -376,13 +376,13 @@ const Dashboard = () => {
                     <div className="bg-prime-primary rounded-2xl p-8 text-white border-0 shadow-sm relative overflow-hidden">
                         <div className="relative z-10">
                             <h3 className="text-white/90 text-xs font-bold uppercase tracking-widest mb-2">Total Commission Earned</h3>
-                            <p className="text-5xl font-bold tracking-tight">Rs. {commission.total.toFixed(2)}</p>
+                            <p className="text-5xl font-bold tracking-tight">Rs. {commission.total}</p>
                         </div>
                     </div>
                     <div className="bg-white rounded-2xl border border-gray-200 p-8 shadow-sm relative overflow-hidden">
                         <div className="relative z-10">
                             <h3 className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-2">Earned This Week</h3>
-                            <p className="text-5xl font-bold tracking-tight text-prime-primary">Rs. {commission.weekly.toFixed(2)}</p>
+                            <p className="text-5xl font-bold tracking-tight text-prime-primary">Rs. {commission.weekly}</p>
                         </div>
                     </div>
                 </div>
@@ -395,7 +395,7 @@ const Dashboard = () => {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10 px-2">
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Commission</h3>
-                        <p className="text-4xl font-bold text-prime-primary">Rs. {commission.daily.toFixed(2)}</p>
+                        <p className="text-4xl font-bold text-prime-primary">Rs. {commission.daily}</p>
                     </div>
                     <div className="bg-white rounded-3xl border border-gray-200 p-6 shadow-sm">
                         <h3 className="text-gray-500 text-[11px] font-bold uppercase tracking-widest mb-3">Retained</h3>
@@ -500,7 +500,7 @@ const Dashboard = () => {
                                                     <td className="p-4 text-sm text-gray-600">{emp.dialingId !== 'N/A' ? `#${emp.dialingId}` : '-'}</td>
                                                     <td className="p-4 text-sm font-bold text-emerald-600">{emp.retained}</td>
                                                     <td className="p-4 text-sm font-bold text-red-600">{emp.clawed_back}</td>
-                                                    <td className="p-4 text-sm font-bold text-prime-primary">Rs. {emp.commission.toFixed(2)}</td>
+                                                    <td className="p-4 text-sm font-bold text-prime-primary">Rs. {emp.commission}</td>
                                                 </tr>
                                             ))
                                         ) : (

@@ -47,7 +47,7 @@ const CallTable = ({ calls }) => {
                                 {/* NEW COMMISSION DATA */}
                                 <td className="px-8 py-5 whitespace-nowrap">
                                     <div className="text-sm font-bold text-gray-700">
-                                        {call.status === 'retained' ? `Rs. ${parseFloat(call.commission || 0).toFixed(2)}` : '-'}
+                                        {call.status === 'retained' ? `Rs. ${parseFloat(call.commission || 0)}` : '-'}
                                     </div>
                                 </td>
                             </tr>

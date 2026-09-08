@@ -22,7 +22,7 @@ const CallManagement = () => {
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [specificDate, setSpecificDate] = useState('');
-    
+
     const [page, setPage] = useState(1);
     const [totalRecords, setTotalRecords] = useState(0);
     const limit = 50;
@@ -36,14 +36,14 @@ const CallManagement = () => {
     const [formData, setFormData] = useState({
         client_name: '', employee_id: '', status: 'retained', commission: '',
         handy_id: '', closer_id: '', doc_sign_id: '',
-        date: new Date().toISOString().split('T')[0] 
+        date: new Date().toISOString().split('T')[0]
     });
 
     const fetchCallsAndUsers = async () => {
         setLoading(true);
         try {
             // Fetch dynamically based on role
-            const endpoint = user?.role === 'employee' 
+            const endpoint = user?.role === 'employee'
                 ? `/api/v1/calls/me?page=${page}&limit=${limit}`
                 : `/api/v1/calls/?page=${page}&limit=${limit}`;
 
@@ -51,7 +51,7 @@ const CallManagement = () => {
                 apiClient.get(endpoint),
                 apiClient.get('/api/v1/users/')
             ]);
-            
+
             setCalls(callsRes.data.data || []);
             setTotalRecords(callsRes.data.total || 0);
 
@@ -113,14 +113,14 @@ const CallManagement = () => {
         return found.dialing_id ? `${name} (#${found.dialing_id})` : name;
     };
 
-const getCloserName = (id) => {
-    if (!id) return null;
-    const found = closers.find(c => c.id === id);
-    if (!found) return 'Unknown';
-    
-    const name = found.full_name || found.email;
-    return found.dialing_id ? `${name} (#${found.dialing_id})` : name;
-};
+    const getCloserName = (id) => {
+        if (!id) return null;
+        const found = closers.find(c => c.id === id);
+        if (!found) return 'Unknown';
+
+        const name = found.full_name || found.email;
+        return found.dialing_id ? `${name} (#${found.dialing_id})` : name;
+    };
 
     const filteredCalls = calls.filter(call => {
         if (statusFilter !== 'all' && call.status !== statusFilter) return false;
@@ -129,7 +129,7 @@ const getCloserName = (id) => {
         const handyName = getCloserName(call.handy_id) || '';
         const closerName = getCloserName(call.closer_id) || '';
         const docSignName = getCloserName(call.doc_sign_id) || '';
-        
+
         const searchString = `${call.client_name || ''} ${agentName} ${handyName} ${closerName} ${docSignName} ${call.status || ''} ${call.date || ''}`.toLowerCase();
         const matchesSearch = searchTerm === '' || searchString.includes(searchTerm.toLowerCase());
 
@@ -138,7 +138,7 @@ const getCloserName = (id) => {
 
         const matchesFrom = fromDate ? (callDateStr && callDateStr >= fromDate) : true;
         const matchesTo = toDate ? (callDateStr && callDateStr <= toDate) : true;
-        const matchesSpecificDate = specificDate ? (callDateStr === specificDate) : true; 
+        const matchesSpecificDate = specificDate ? (callDateStr === specificDate) : true;
 
         return matchesSearch && matchesFrom && matchesTo && matchesSpecificDate;
     });
@@ -389,7 +389,7 @@ const getCloserName = (id) => {
                                 value={fromDate}
                                 onChange={(e) => {
                                     setFromDate(e.target.value);
-                                    setSpecificDate(''); 
+                                    setSpecificDate('');
                                 }}
                                 className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-prime-primary"
                             />
@@ -402,7 +402,7 @@ const getCloserName = (id) => {
                                 value={toDate}
                                 onChange={(e) => {
                                     setToDate(e.target.value);
-                                    setSpecificDate(''); 
+                                    setSpecificDate('');
                                 }}
                                 className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-prime-primary"
                             />
@@ -410,7 +410,7 @@ const getCloserName = (id) => {
                     </div>
 
                     {(fromDate || toDate || searchTerm || specificDate) && (
-                        <button 
+                        <button
                             onClick={() => { setFromDate(''); setToDate(''); setSearchTerm(''); setSpecificDate(''); }}
                             className="mt-5 px-3 py-1.5 text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors"
                         >
@@ -446,64 +446,64 @@ const getCloserName = (id) => {
                             ) : (
                                 filteredCalls.map((call) => (
                                     <tr key={call.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
-    <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">
-        {formatDate(call.date)}
-    </td>
-    <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
-    <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">
+                                            {formatDate(call.date)}
+                                        </td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
 
-    <td className="px-4 md:px-6 py-5 whitespace-nowrap">
-        <div className="flex flex-col gap-1 text-[11px] font-medium text-gray-500">
-            {call.handy_id && <span><b className="text-prime-primary mr-1">H :</b> {getCloserName(call.handy_id)}</span>}
-            {call.closer_id && <span><b className="text-prime-primary mr-1">C :</b> {getCloserName(call.closer_id)}</span>}
-            {call.doc_sign_id && <span><b className="text-prime-primary mr-1">DS:</b> {getCloserName(call.doc_sign_id)}</span>}
-            {!call.handy_id && !call.closer_id && !call.doc_sign_id && <span className="text-gray-300">-</span>}
-        </div>
-    </td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap">
+                                            <div className="flex flex-col gap-1 text-[11px] font-medium text-gray-500">
+                                                {call.handy_id && <span><b className="text-prime-primary mr-1">H :</b> {getCloserName(call.handy_id)}</span>}
+                                                {call.closer_id && <span><b className="text-prime-primary mr-1">C :</b> {getCloserName(call.closer_id)}</span>}
+                                                {call.doc_sign_id && <span><b className="text-prime-primary mr-1">DS:</b> {getCloserName(call.doc_sign_id)}</span>}
+                                                {!call.handy_id && !call.closer_id && !call.doc_sign_id && <span className="text-gray-300">-</span>}
+                                            </div>
+                                        </td>
 
-    <td className="px-4 md:px-6 py-5 whitespace-nowrap">
-        <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${call.status === 'retained' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
-            {call.status.replace('_', ' ')}
-        </span>
-    </td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap">
+                                            <span className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase ${call.status === 'retained' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
+                                                {call.status.replace('_', ' ')}
+                                            </span>
+                                        </td>
 
-    <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-700 text-sm">
-        {`Rs. ${parseFloat(call.commission || 0).toFixed(2)}`}
-    </td>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-700 text-sm">
+                                            {`Rs. ${parseFloat(call.commission || 0)}`}
+                                        </td>
 
-    <td className="px-4 md:px-6 py-5 whitespace-nowrap text-right">
-        <div className="flex justify-end gap-2 items-center">
-            <button onClick={() => handleOpenEdit(call)} className="text-gray-400 hover:text-prime-primary p-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-            </button>
-            <button onClick={() => setConfirmDeleteDialog({ isOpen: true, callId: call.id })} className="text-gray-400 hover:text-red-500 p-2">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-            </button>
-        </div>
-    </td>
-</tr>
+                                        <td className="px-4 md:px-6 py-5 whitespace-nowrap text-right">
+                                            <div className="flex justify-end gap-2 items-center">
+                                                <button onClick={() => handleOpenEdit(call)} className="text-gray-400 hover:text-prime-primary p-2">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                </button>
+                                                <button onClick={() => setConfirmDeleteDialog({ isOpen: true, callId: call.id })} className="text-gray-400 hover:text-red-500 p-2">
+                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 ))
                             )}
                         </tbody>
                     </table>
                 </div>
-                
+
                 {/* 🚨 Pagination Controls Footer */}
                 <div className="flex justify-between items-center px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl mt-auto">
                     <span className="text-xs text-gray-500 font-medium">Page {page} • Showing {calls.length} of {totalRecords} records</span>
                     <div className="flex gap-2">
-                        <Button 
-                            disabled={page === 1} 
-                            onClick={() => setPage(page - 1)} 
-                            variant="secondary" 
+                        <Button
+                            disabled={page === 1}
+                            onClick={() => setPage(page - 1)}
+                            variant="secondary"
                             className="px-4 py-1.5 text-xs font-semibold shadow-sm"
                         >
                             Previous
                         </Button>
-                        <Button 
-                            disabled={calls.length < limit || calls.length === 0} 
-                            onClick={() => setPage(page + 1)} 
-                            variant="secondary" 
+                        <Button
+                            disabled={calls.length < limit || calls.length === 0}
+                            onClick={() => setPage(page + 1)}
+                            variant="secondary"
                             className="px-4 py-1.5 text-xs font-semibold shadow-sm"
                         >
                             Next

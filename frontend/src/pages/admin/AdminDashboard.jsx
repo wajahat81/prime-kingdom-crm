@@ -15,7 +15,7 @@ const AdminDashboard = () => {
             try {
                 const response = await apiClient.get('/api/v1/calls/');
                 const calls = response.data.data || [];
-                
+
                 const stats = calls.reduce((acc, call) => {
                     acc.totalCalls += 1;
                     if (call.status === 'retained') {
@@ -26,7 +26,7 @@ const AdminDashboard = () => {
                     if (call.status === 'not_retained') acc.notRetained += 1;
                     return acc;
                 }, { totalCalls: 0, retained: 0, pending: 0, notRetained: 0, totalCommission: 0 });
-                
+
                 setStats(stats);
             } catch (error) {
                 console.error('Failed to fetch stats:', error);
@@ -47,13 +47,13 @@ const AdminDashboard = () => {
         <PageWrapper title="Admin Dashboard">
             <AnnouncementModal />
             <AnnouncementBanner />
-            
+
             <div className="w-full pt-4">
                 <div className="mb-8 px-2">
                     <h1 className="text-2xl font-bold text-prime-text tracking-tight mb-1">Administrator Dashboard</h1>
                     <p className="text-sm text-prime-muted font-medium">System-wide overview of call logging and commission tracking.</p>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-10 px-2">
                     <div className="card-base p-6 bg-white">
                         <h3 className="text-prime-muted text-xs font-semibold uppercase tracking-wider mb-2">Total Calls</h3>
@@ -73,7 +73,7 @@ const AdminDashboard = () => {
                     </div>
                     <div className="card-base p-6 bg-gradient-to-r from-prime-primary to-prime-secondary text-white border-0">
                         <h3 className="text-white/90 text-xs font-semibold uppercase tracking-wider mb-2">Total Commission</h3>
-                        <p className="text-3xl font-bold tracking-tight">${stats.totalCommission.toFixed(2)}</p>
+                        <p className="text-3xl font-bold tracking-tight">${stats.totalCommission}</p>
                     </div>
                 </div>
             </div>

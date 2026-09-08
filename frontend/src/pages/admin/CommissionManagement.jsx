@@ -12,7 +12,7 @@ const CommissionManagement = () => {
     const [commissions, setCommissions] = useState([]);
     const [status, setStatus] = useState(null);
     const [submitting, setSubmitting] = useState(false);
-    
+
     const [confirmModal, setConfirmModal] = useState(false);
 
     useEffect(() => {
@@ -82,9 +82,9 @@ const CommissionManagement = () => {
 
     return (
         <PageWrapper title="Commission Operations">
-            <Modal 
-                isOpen={confirmModal} 
-                onClose={() => setConfirmModal(false)} 
+            <Modal
+                isOpen={confirmModal}
+                onClose={() => setConfirmModal(false)}
                 title="Authorize Payout"
                 onConfirm={confirmSubmit}
                 confirmText="Authorize"
@@ -102,7 +102,7 @@ const CommissionManagement = () => {
                 <div className="xl:col-span-1">
                     <div className="card-base p-8 sticky top-24 bg-white">
                         <h2 className="text-lg font-bold text-prime-text mb-6">Allocate Funds</h2>
-                        
+
                         {status && (
                             <div className={`px-4 py-2 mb-6 rounded-full text-xs font-semibold text-center ${status.type === 'success' ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-600'}`}>
                                 {status.text}
@@ -164,7 +164,7 @@ const CommissionManagement = () => {
                                             <tr key={comm.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
                                                 <td className="px-8 py-5 whitespace-nowrap font-medium text-sm text-prime-text">{getEmployeeName(comm.employee_id)}</td>
                                                 <td className="px-8 py-5 whitespace-nowrap text-prime-muted font-medium text-sm">{comm.total_retained_calls}</td>
-                                                <td className="px-8 py-5 whitespace-nowrap font-bold text-prime-text text-sm">${comm.payout_amount.toFixed(2)}</td>
+                                                <td className="px-8 py-5 whitespace-nowrap font-bold text-prime-text text-sm">${comm.payout_amount}</td>
                                                 <td className="px-8 py-5 whitespace-nowrap text-sm font-medium text-prime-muted">{comm.month}</td>
                                                 <td className="px-8 py-5 whitespace-nowrap text-xs text-gray-400">{new Date(comm.created_at).toLocaleDateString()}</td>
                                             </tr>

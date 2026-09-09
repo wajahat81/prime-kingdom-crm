@@ -211,25 +211,38 @@ const AttendanceLogs = () => {
     };
 
     const checkIsLate = (log) => {
-        if (!log || !log.check_in) return false;
-        const cIn = new Date(log.check_in);
-        const rules = officeSettings || {
-            standard: { start_time: "13:00", grace_mins: 10, req_hours: 9 },
-            friday: { start_time: "15:00", grace_mins: 10, req_hours: 7 },
-            saturday: { start_time: "14:00", grace_mins: 10, req_hours: 5.75 }
-        };
+    if (!log || !log.check_in) return false;
+    
+    // Force the check-in time to evaluate strictly in PKT time
+    const cIn = new Date(log.check_in);
+    const pktTimeStr = cIn.toLocaleString('en-US', { timeZone: 'Asia/Karachi', hour12: false });
+    const timePart = pktTimeStr.split(', ')[1]; // Extracts HH:MM:SS
+    if (!timePart) return false;
+    
+    const [cInHour, cInMin] = timePart.split(':').map(Number);
 
-        const dayOfWeek = cIn.getDay(); 
-        let dayProfile = rules.standard;
-        if (dayOfWeek === 5) dayProfile = rules.friday;
-        if (dayOfWeek === 6) dayProfile = rules.saturday;
-
-        const [startHour, startMin] = dayProfile.start_time.split(':').map(Number);
-        const cInHour = cIn.getHours();
-        const cInMin = cIn.getMinutes();
-        
-        return cInHour > startHour || (cInHour === startHour && cInMin > startMin + dayProfile.grace_mins);
+    const rules = officeSettings || {
+        standard: { start_time: "13:00", grace_mins: 10, req_hours: 9 },
+        friday: { start_time: "15:00", grace_mins: 10, req_hours: 7 },
+        saturday: { start_time: "14:00", grace_mins: 10, req_hours: 5.75 }
     };
+
+    // Determine day of week in PKT
+    const pktDateOptions = { timeZone: 'Asia/Karachi', weekday: 'numeric' };
+    const dayOfWeek = parseInt(new Intl.DateTimeFormat('en-US', { ...pktDateOptions, weekday: 'narrow' }).format(cIn)) || cIn.getDay();
+
+    let dayProfile = rules.standard;
+    if (dayOfWeek === 5) dayProfile = rules.friday;
+    if (dayOfWeek === 6) dayProfile = rules.saturday;
+
+    if (!dayProfile || !dayProfile.start_time) return false;
+
+    const [startHour, startMin] = dayProfile.start_time.split(':').map(Number);
+    const totalGraceMinutes = (startHour * 60 + startMin) + (dayProfile.grace_mins || 10);
+    const actualCheckInMinutes = cInHour * 60 + cInMin;
+
+    return actualCheckInMinutes > totalGraceMinutes;
+};
 
     const filteredEmployeesByRole = employees.filter(emp => {
         if (selectedRoleFilter === 'all') return true;

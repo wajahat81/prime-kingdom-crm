@@ -9,13 +9,14 @@ const getLocalDateStr = () => {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
 };
 
+// Limit increased to 365 days (1 year)
 const getDatesInRange = (startStr, endStr) => {
     const arr = [];
     let current = new Date(`${startStr}T00:00:00`);
     const end = new Date(`${endStr}T00:00:00`);
     
     let safetyCounter = 0; 
-    while (current <= end && safetyCounter < 60) {
+    while (current <= end && safetyCounter < 365) {
         const year = current.getFullYear();
         const month = String(current.getMonth() + 1).padStart(2, '0');
         const day = String(current.getDate()).padStart(2, '0');
@@ -32,14 +33,15 @@ const AttendanceLogs = () => {
     const [selectedRoleFilter, setSelectedRoleFilter] = useState('all'); 
     const [selectedEmployee, setSelectedEmployee] = useState('all');
     
-    const [filterMode, setFilterMode] = useState('date');
+    const [filterMode, setFilterMode] = useState('date'); 
     const [specificDate, setSpecificDate] = useState(getLocalDateStr());
     const [fromDate, setFromDate] = useState(getLocalDateStr());
     const [toDate, setToDate] = useState(getLocalDateStr());
     
     const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
     
-    const [attendanceLogs, setAttendanceLogs] = useState([]);
+    // NEW: Cache architecture for lazy page-by-page loading
+    const [attendanceCache, setAttendanceCache] = useState({});
     const [loading, setLoading] = useState(false);
     const [statusMessage, setStatusMessage] = useState(null);
     const [officeSettings, setOfficeSettings] = useState(null);
@@ -51,7 +53,6 @@ const AttendanceLogs = () => {
 
     const [now, setNow] = useState(new Date());
 
-    // NEW: Client-side Pagination States
     const [page, setPage] = useState(1);
     const limit = 50;
     
@@ -87,72 +88,57 @@ const AttendanceLogs = () => {
         fetchSettings();
     }, []);
 
-    // Reset pagination to page 1 whenever any filter changes
+    // Reset pagination on filter change
     useEffect(() => {
         setPage(1);
     }, [selectedRoleFilter, selectedEmployee, selectedStatusFilter, filterMode, specificDate, fromDate, toDate]);
 
-    const fetchAttendanceData = async () => {
-        setLoading(true);
-        setStatusMessage(null);
-        try {
-            if (selectedEmployee === 'all') {
-                const datesToFetch = filterMode === 'date' 
-                    ? [specificDate || getLocalDateStr()] 
-                    : getDatesInRange(fromDate || getLocalDateStr(), toDate || getLocalDateStr());
-
-                const promises = datesToFetch.map(d => apiClient.get(`/api/v1/attendance/date/${d}`));
-                const results = await Promise.all(promises);
-                
-                const allLogs = results.flatMap(res => res.data.data || []);
-                setAttendanceLogs(allLogs);
-            } else {
-                const response = await apiClient.get(`/api/v1/attendance/history/${selectedEmployee}`);
-                setAttendanceLogs(response.data.data || []);
-            }
-        } catch (error) {
-            setAttendanceLogs([]);
-        } finally {
-            setLoading(false);
-        }
-    };
-
+    // Realtime Sync directly to Cache
     useEffect(() => {
         const attendanceChannel = supabase
             .channel('live-attendance')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'attendance' },
-                (payload) => {
-                    setAttendanceLogs((prevLogs) => {
-                        if (payload.eventType === 'INSERT') return [payload.new, ...prevLogs];
-                        else if (payload.eventType === 'UPDATE') {
-                            return prevLogs.map((log) => log.id === payload.new.id ? payload.new : log);
-                        } 
-                        else if (payload.eventType === 'DELETE') {
-                            return prevLogs.filter((log) => log.id !== payload.old.id);
-                        }
-                        return prevLogs;
-                    });
-                }
-            )
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, (payload) => {
+                setAttendanceCache((prevCache) => {
+                    const record = payload.new || payload.old;
+                    const date = record.date;
+                    if (!prevCache[date]) return prevCache; 
+
+                    let currentLogs = [...prevCache[date]];
+                    if (payload.eventType === 'INSERT') {
+                        currentLogs.push(payload.new);
+                    } else if (payload.eventType === 'UPDATE') {
+                        currentLogs = currentLogs.map(l => l.id === payload.new.id ? payload.new : l);
+                    } else if (payload.eventType === 'DELETE') {
+                        currentLogs = currentLogs.filter(l => l.id !== payload.old.id);
+                    }
+                    
+                    return { ...prevCache, [date]: currentLogs };
+                });
+            })
             .subscribe();
 
-        return () => {
-            supabase.removeChannel(attendanceChannel);
-        };
-    }, []); 
-
-    useEffect(() => {
-        fetchAttendanceData();
-    }, [selectedEmployee, filterMode, specificDate, fromDate, toDate]);
+        return () => supabase.removeChannel(attendanceChannel);
+    }, []);
 
     const handleDirectStatusUpdate = async (logId, actionType) => {
         setStatusMessage(null);
         try {
             await apiClient.put(`/api/v1/attendance/${logId}/status`, { status: actionType });
             setStatusMessage({ type: 'success', text: `Timesheet securely ${actionType}.` });
-            setAttendanceLogs(prevLogs => prevLogs.map(item => item.id === logId ? { ...item, status: actionType } : item));
+            
+            // Update cache locally
+            setAttendanceCache(prev => {
+                const newCache = { ...prev };
+                for (const date in newCache) {
+                    const idx = newCache[date].findIndex(l => l.id === logId);
+                    if (idx !== -1) {
+                        newCache[date] = [...newCache[date]];
+                        newCache[date][idx] = { ...newCache[date][idx], status: actionType };
+                        break;
+                    }
+                }
+                return newCache;
+            });
         } catch (error) {
             setStatusMessage({ type: 'error', text: error.response?.data?.detail || `Failed to ${actionType} attendance record.` });
         }
@@ -163,19 +149,11 @@ const AttendanceLogs = () => {
         const toPKTInputString = (isoString) => {
             if (!isoString) return '';
             const date = new Date(isoString);
-            const options = {
-                timeZone: 'Asia/Karachi',
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
-            };
+            const options = { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false };
             const formatter = new Intl.DateTimeFormat('en-CA', options);
             const parts = formatter.formatToParts(date);
             const getPart = (type) => parts.find(p => p.type === type)?.value || '';
-            return `${getPart('year')}-${getPart('month')} -${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
+            return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
         };
         setEditCheckIn(toPKTInputString(log.check_in));
         setEditCheckOut(toPKTInputString(log.check_out));
@@ -197,7 +175,15 @@ const AttendanceLogs = () => {
             await apiClient.put(`/api/v1/attendance/${editingLog.id}`, payload);
             setStatusMessage({ type: 'success', text: 'Attendance times updated successfully.' });
             setIsEditModalOpen(false);
-            fetchAttendanceData();
+            
+            // Force refetch of that specific date
+            if (editingLog.date) {
+                setAttendanceCache(prev => {
+                    const nc = { ...prev };
+                    delete nc[editingLog.date]; // Deleting it from cache forces the lazy loader to fetch it again
+                    return nc;
+                });
+            }
         } catch (err) {
             setStatusMessage({ type: 'error', text: err.response?.data?.detail || 'Failed to update attendance times.' });
         }
@@ -224,7 +210,6 @@ const AttendanceLogs = () => {
         const cIn = new Date(log.check_in);
         const pktTimeStr = cIn.toLocaleString('en-US', { timeZone: 'Asia/Karachi', hour12: false });
         
-        // Handle variations in browser's local string format (safeguard extraction)
         const timePart = pktTimeStr.includes(', ') ? pktTimeStr.split(', ')[1] : pktTimeStr.split(' ')[1];
         if (!timePart) return false;
         
@@ -259,6 +244,7 @@ const AttendanceLogs = () => {
         return actualCheckInMinutes > totalGraceMinutes;
     };
 
+    // --- VIRTUAL ROWS GENERATION ---
     const filteredEmployeesByRole = employees.filter(emp => {
         if (selectedRoleFilter === 'all') return true;
         if (selectedRoleFilter === 'employee') return emp.role === 'employee';
@@ -267,7 +253,6 @@ const AttendanceLogs = () => {
         return true;
     });
 
-    let displayData = [];
     const datesToRender = filterMode === 'date' 
         ? [specificDate || getLocalDateStr()] 
         : getDatesInRange(fromDate || getLocalDateStr(), toDate || getLocalDateStr());
@@ -276,25 +261,28 @@ const AttendanceLogs = () => {
         ? filteredEmployeesByRole 
         : [employees.find(e => e.id === selectedEmployee)].filter(Boolean);
 
+    let allVirtualRows = [];
     datesToRender.forEach(dateStr => {
         employeesToProcess.forEach(emp => {
-            const log = attendanceLogs.find(l => l.employee_id === emp.id && l.date === dateStr);
-            displayData.push({ 
-                uniqueKey: `${emp.id}-${dateStr}`, 
-                employee: emp, 
-                log: log || null, 
-                recordDate: dateStr 
-            });
+            allVirtualRows.push({ uniqueKey: `${emp.id}-${dateStr}`, employee: emp, recordDate: dateStr });
         });
     });
 
-    displayData.sort((a, b) => {
+    allVirtualRows.sort((a, b) => {
         const dateDiff = new Date(b.recordDate) - new Date(a.recordDate);
         if (dateDiff !== 0) return dateDiff;
         return (a.employee.full_name || '').localeCompare(b.employee.full_name || '');
     });
 
-    const finalDisplayData = displayData.filter(item => {
+    // Map logs from cache
+    const virtualRowsWithLogs = allVirtualRows.map(row => {
+        const dayLogs = attendanceCache[row.recordDate] || [];
+        const log = dayLogs.find(l => l.employee_id === row.employee.id) || null;
+        return { ...row, log };
+    });
+
+    // Apply Status Filter
+    const filteredRows = virtualRowsWithLogs.filter(item => {
         if (selectedStatusFilter === 'all') return true;
         if (selectedStatusFilter === 'absent') return !item.log;
         if (selectedStatusFilter === 'present') return !!item.log;
@@ -303,16 +291,77 @@ const AttendanceLogs = () => {
     });
 
     // Handle Client-Side Pagination
-    const totalRecords = finalDisplayData.length;
-    const paginatedData = finalDisplayData.slice((page - 1) * limit, page * limit);
+    const totalRecords = filteredRows.length;
+    const paginatedData = filteredRows.slice((page - 1) * limit, page * limit);
+
+    // --- LAZY PAGE-BY-PAGE FETCHING (For Default View) ---
+    useEffect(() => {
+        if (selectedStatusFilter !== 'all') return; // Managed by batch fetcher
+
+        const datesOnPage = [...new Set(paginatedData.map(r => r.recordDate))];
+        const datesToFetch = datesOnPage.filter(d => !attendanceCache[d]);
+
+        if (datesToFetch.length > 0) {
+            setLoading(true);
+            Promise.all(datesToFetch.map(d => apiClient.get(`/api/v1/attendance/date/${d}`)))
+                .then(results => {
+                    setAttendanceCache(prev => {
+                        const newCache = { ...prev };
+                        results.forEach((res, i) => {
+                            newCache[datesToFetch[i]] = res.data.data || [];
+                        });
+                        return newCache;
+                    });
+                    setLoading(false);
+                })
+                .catch(err => {
+                    console.error(err);
+                    setLoading(false);
+                });
+        }
+    }, [paginatedData, attendanceCache, selectedStatusFilter]);
+
+    // --- BATCH FETCHING (For Filtered Views to prevent crashing) ---
+    useEffect(() => {
+        if (selectedStatusFilter === 'all') return;
+        
+        const missingDates = datesToRender.filter(d => !attendanceCache[d]);
+        if (missingDates.length === 0) return;
+
+        const fetchInBatches = async () => {
+            setLoading(true);
+            const chunkArray = (arr, size) => arr.length ? [arr.slice(0, size), ...chunkArray(arr.slice(size), size)] : [];
+            const batches = chunkArray(missingDates, 15); // Process 15 days at a time
+            
+            let tempCache = {};
+            for (const batch of batches) {
+                try {
+                    const promises = batch.map(d => apiClient.get(`/api/v1/attendance/date/${d}`));
+                    const results = await Promise.all(promises);
+                    results.forEach((res, i) => {
+                        tempCache[batch[i]] = res.data.data || [];
+                    });
+                } catch (err) {
+                    console.error('Batch error', err);
+                }
+            }
+            
+            setAttendanceCache(prev => ({ ...prev, ...tempCache }));
+            setLoading(false);
+        };
+
+        fetchInBatches();
+    }, [selectedStatusFilter, datesToRender, attendanceCache]);
+
 
     const handleExportCSV = () => {
-        if (finalDisplayData.length === 0) {
+        // Export uses all filteredRows, not just the paginated slice
+        if (filteredRows.length === 0) {
             setStatusMessage({ type: 'error', text: 'No data available to export.' });
             return;
         }
         const headers = ['Date', 'Employee Name', 'Role', 'Check In', 'Check Out', 'Total Time', 'Status'];
-        const csvRows = finalDisplayData.map(({ employee, log, recordDate }) => {
+        const csvRows = filteredRows.map(({ employee, log, recordDate }) => {
             const dateStr = recordDate || new Date().toISOString().split('T')[0];
             const empName = employee?.full_name || 'N/A';
             const role = employee?.role || 'N/A';
@@ -424,7 +473,6 @@ const AttendanceLogs = () => {
                     </div>
                 </div>
 
-                {/* CONDITIONAL DATE PICKER INPUTS BASED ON MODE */}
                 <div className="pt-2 border-t border-gray-100 flex items-center gap-4">
                     {filterMode === 'date' ? (
                         <div className="w-full md:w-1/3">
@@ -461,7 +509,7 @@ const AttendanceLogs = () => {
                         </thead>
                         <tbody className="bg-white">
                             {loading ? (
-                                <tr><td colSpan="6" className="px-8 py-20 text-center text-prime-muted text-sm">Querying database...</td></tr>
+                                <tr><td colSpan="6" className="px-8 py-20 text-center text-prime-muted text-sm">Loading records...</td></tr>
                             ) : paginatedData.length === 0 ? (
                                 <tr><td colSpan="6" className="px-8 py-32 text-center text-prime-primary/60 text-sm font-medium">No records found.</td></tr>
                             ) : (
@@ -545,7 +593,19 @@ const AttendanceLogs = () => {
                                                                 onClick={async () => {
                                                                     try {
                                                                         await apiClient.put(`/api/v1/attendance/${log.id}/reopen`);
-                                                                        setAttendanceLogs(prevLogs => prevLogs.map(item => item.id === log.id ? { ...item, check_out: null, status: 'checked_in' } : item));
+                                                                        // Update cache manually
+                                                                        setAttendanceCache(prev => {
+                                                                            const nc = { ...prev };
+                                                                            for (const date in nc) {
+                                                                                const idx = nc[date].findIndex(l => l.id === log.id);
+                                                                                if (idx !== -1) {
+                                                                                    nc[date] = [...nc[date]];
+                                                                                    nc[date][idx] = { ...nc[date][idx], check_out: null, status: 'checked_in' };
+                                                                                    break;
+                                                                                }
+                                                                            }
+                                                                            return nc;
+                                                                        });
                                                                     } catch (error) {
                                                                         console.error("Failed to reopen shift", error);
                                                                     }

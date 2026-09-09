@@ -3,18 +3,42 @@ import apiClient from '../../services/apiClient';
 import PageWrapper from '../../components/layout/PageWrapper';
 import { supabase } from '../../services/supabaseClient';
 import { createPortal } from 'react-dom';
-import { useAuth } from '../../context/AuthContext'; // 🚨 NEW: Added useAuth
+import { useAuth } from '../../context/AuthContext'; 
 
 const getLocalDateStr = () => {
     return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' });
 };
 
+const getDatesInRange = (startStr, endStr) => {
+    const arr = [];
+    let current = new Date(`${startStr}T00:00:00`);
+    const end = new Date(`${endStr}T00:00:00`);
+    
+    let safetyCounter = 0; 
+    while (current <= end && safetyCounter < 60) {
+        const year = current.getFullYear();
+        const month = String(current.getMonth() + 1).padStart(2, '0');
+        const day = String(current.getDate()).padStart(2, '0');
+        arr.push(`${year}-${month}-${day}`);
+        current.setDate(current.getDate() + 1);
+        safetyCounter++;
+    }
+    return arr;
+};
+
 const AttendanceLogs = () => {
-    const { user } = useAuth(); // 🚨 NEW: Grab logged in admin
+    const { user } = useAuth(); 
     const [employees, setEmployees] = useState([]);
     const [selectedRoleFilter, setSelectedRoleFilter] = useState('all'); 
     const [selectedEmployee, setSelectedEmployee] = useState('all');
-    const [selectedDate, setSelectedDate] = useState(getLocalDateStr());
+    
+    // SEPARATE FILTERS: Specific Date vs Time Period (From/To)
+    const [filterMode, setFilterMode] = useState('date'); // 'date' or 'range'
+    const [specificDate, setSpecificDate] = useState(getLocalDateStr());
+    const [fromDate, setFromDate] = useState(getLocalDateStr());
+    const [toDate, setToDate] = useState(getLocalDateStr());
+    
+    const [selectedStatusFilter, setSelectedStatusFilter] = useState('all');
     
     const [attendanceLogs, setAttendanceLogs] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -32,14 +56,6 @@ const AttendanceLogs = () => {
         const interval = setInterval(() => setNow(new Date()), 60000);
         return () => clearInterval(interval);
     }, []);
-
-    useEffect(() => {
-        if (selectedEmployee === 'all') {
-            if (!selectedDate) setSelectedDate(getLocalDateStr());
-        } else {
-            setSelectedDate('');
-        }
-    }, [selectedEmployee]);
 
     useEffect(() => {
         const fetchUsers = async () => {
@@ -73,9 +89,15 @@ const AttendanceLogs = () => {
         setStatusMessage(null);
         try {
             if (selectedEmployee === 'all') {
-                const targetDate = selectedDate || getLocalDateStr();
-                const response = await apiClient.get(`/api/v1/attendance/date/${targetDate}`);
-                setAttendanceLogs(response.data.data || []);
+                const datesToFetch = filterMode === 'date' 
+                    ? [specificDate || getLocalDateStr()] 
+                    : getDatesInRange(fromDate || getLocalDateStr(), toDate || getLocalDateStr());
+
+                const promises = datesToFetch.map(d => apiClient.get(`/api/v1/attendance/date/${d}`));
+                const results = await Promise.all(promises);
+                
+                const allLogs = results.flatMap(res => res.data.data || []);
+                setAttendanceLogs(allLogs);
             } else {
                 const response = await apiClient.get(`/api/v1/attendance/history/${selectedEmployee}`);
                 setAttendanceLogs(response.data.data || []);
@@ -114,9 +136,8 @@ const AttendanceLogs = () => {
     }, []); 
 
     useEffect(() => {
-        if (selectedEmployee === 'all' && !selectedDate) return; 
         fetchAttendanceData();
-    }, [selectedEmployee, selectedDate]);
+    }, [selectedEmployee, filterMode, specificDate, fromDate, toDate]);
 
     const handleDirectStatusUpdate = async (logId, actionType) => {
         setStatusMessage(null);
@@ -146,7 +167,7 @@ const AttendanceLogs = () => {
             const formatter = new Intl.DateTimeFormat('en-CA', options);
             const parts = formatter.formatToParts(date);
             const getPart = (type) => parts.find(p => p.type === type)?.value || '';
-            return `${getPart('year')}-${getPart('month')}-${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
+            return `${getPart('year')}-${getPart('month')} -${getPart('day')}T${getPart('hour')}:${getPart('minute')}`;
         };
         setEditCheckIn(toPKTInputString(log.check_in));
         setEditCheckOut(toPKTInputString(log.check_out));
@@ -189,6 +210,27 @@ const AttendanceLogs = () => {
         return { text: `${hrs}h ${mins}m`, mins: diffMins };
     };
 
+    const checkIsLate = (log) => {
+        if (!log || !log.check_in) return false;
+        const cIn = new Date(log.check_in);
+        const rules = officeSettings || {
+            standard: { start_time: "13:00", grace_mins: 10, req_hours: 9 },
+            friday: { start_time: "15:00", grace_mins: 10, req_hours: 7 },
+            saturday: { start_time: "14:00", grace_mins: 10, req_hours: 5.75 }
+        };
+
+        const dayOfWeek = cIn.getDay(); 
+        let dayProfile = rules.standard;
+        if (dayOfWeek === 5) dayProfile = rules.friday;
+        if (dayOfWeek === 6) dayProfile = rules.saturday;
+
+        const [startHour, startMin] = dayProfile.start_time.split(':').map(Number);
+        const cInHour = cIn.getHours();
+        const cInMin = cIn.getMinutes();
+        
+        return cInHour > startHour || (cInHour === startHour && cInMin > startMin + dayProfile.grace_mins);
+    };
+
     const filteredEmployeesByRole = employees.filter(emp => {
         if (selectedRoleFilter === 'all') return true;
         if (selectedRoleFilter === 'employee') return emp.role === 'employee';
@@ -198,30 +240,47 @@ const AttendanceLogs = () => {
     });
 
     let displayData = [];
-    if (selectedEmployee === 'all') {
-        const targetDate = selectedDate || getLocalDateStr();
-        displayData = filteredEmployeesByRole.map(emp => {
-            const log = attendanceLogs.find(l => l.employee_id === emp.id);
-            return { uniqueKey: emp.id, employee: emp, log: log || null, recordDate: targetDate };
+    const datesToRender = filterMode === 'date' 
+        ? [specificDate || getLocalDateStr()] 
+        : getDatesInRange(fromDate || getLocalDateStr(), toDate || getLocalDateStr());
+    
+    const employeesToProcess = selectedEmployee === 'all' 
+        ? filteredEmployeesByRole 
+        : [employees.find(e => e.id === selectedEmployee)].filter(Boolean);
+
+    datesToRender.forEach(dateStr => {
+        employeesToProcess.forEach(emp => {
+            const log = attendanceLogs.find(l => l.employee_id === emp.id && l.date === dateStr);
+            displayData.push({ 
+                uniqueKey: `${emp.id}-${dateStr}`, 
+                employee: emp, 
+                log: log || null, 
+                recordDate: dateStr 
+            });
         });
-        displayData.sort((a, b) => (a.employee.full_name || '').localeCompare(b.employee.full_name || ''));
-    } else {
-        const emp = employees.find(e => e.id === selectedEmployee);
-        const filteredLogs = selectedDate ? attendanceLogs.filter(l => l.date === selectedDate) : attendanceLogs;
-        if (selectedDate && filteredLogs.length === 0) {
-            displayData = [{ uniqueKey: 'empty', employee: emp, log: null, recordDate: selectedDate }];
-        } else {
-            displayData = filteredLogs.map(log => ({ uniqueKey: log.id, employee: emp, log: log, recordDate: log.date }));
-        }
-    }
+    });
+
+    displayData.sort((a, b) => {
+        const dateDiff = new Date(b.recordDate) - new Date(a.recordDate);
+        if (dateDiff !== 0) return dateDiff;
+        return (a.employee.full_name || '').localeCompare(b.employee.full_name || '');
+    });
+
+    const finalDisplayData = displayData.filter(item => {
+        if (selectedStatusFilter === 'all') return true;
+        if (selectedStatusFilter === 'absent') return !item.log;
+        if (selectedStatusFilter === 'present') return !!item.log;
+        if (selectedStatusFilter === 'late') return item.log && checkIsLate(item.log);
+        return true;
+    });
 
     const handleExportCSV = () => {
-        if (displayData.length === 0) {
+        if (finalDisplayData.length === 0) {
             setStatusMessage({ type: 'error', text: 'No data available to export.' });
             return;
         }
         const headers = ['Date', 'Employee Name', 'Role', 'Check In', 'Check Out', 'Total Time', 'Status'];
-        const csvRows = displayData.map(({ employee, log, recordDate }) => {
+        const csvRows = finalDisplayData.map(({ employee, log, recordDate }) => {
             const dateStr = recordDate || new Date().toISOString().split('T')[0];
             const empName = employee?.full_name || 'N/A';
             const role = employee?.role || 'N/A';
@@ -246,7 +305,7 @@ const AttendanceLogs = () => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.setAttribute('href', url);
-        link.setAttribute('download', `Attendance_Export_${selectedDate || 'All'}.csv`);
+        link.setAttribute('download', `Attendance_Export.csv`);
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -291,31 +350,67 @@ const AttendanceLogs = () => {
                 document.body
             )}
 
-            <div className="card-base p-6 mb-8 bg-white flex flex-col md:flex-row items-center gap-6">
-                <div className="w-full md:w-1/4">
-                    <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Role Filter</label>
-                    <select value={selectedRoleFilter} onChange={(e) => { setSelectedRoleFilter(e.target.value); setSelectedEmployee('all'); }} className="input-base cursor-pointer">
-                        <option value="all">All Roles</option>
-                        <option value="employee">Agent (Employee)</option>
-                        <option value="closer">Closer</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                </div>
-                <div className="flex-1 w-full min-w-[200px]">
-                    <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Employee Filter</label>
-                    <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="input-base cursor-pointer">
-                        <option value="all">All {selectedRoleFilter === 'all' ? 'Employees' : selectedRoleFilter === 'employee' ? 'Agents' : 'Closers'}</option>
-                        {filteredEmployeesByRole.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name} ({emp.role.replace('_', ' ')})</option>)}
-                    </select>
-                </div>
-                <div className="w-full md:w-auto">
-                    <div className="flex items-center justify-between mb-2 ml-2">
-                        <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider">Date Filter</label>
-                        {selectedEmployee !== 'all' && selectedDate && (
-                            <button onClick={() => setSelectedDate('')} className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase tracking-wider">Clear Date</button>
-                        )}
+            {/* FILTERS PANEL */}
+            <div className="card-base p-6 mb-8 bg-white space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Role Filter</label>
+                        <select value={selectedRoleFilter} onChange={(e) => { setSelectedRoleFilter(e.target.value); setSelectedEmployee('all'); }} className="input-base cursor-pointer">
+                            <option value="all">All Roles</option>
+                            <option value="employee">Agent (Employee)</option>
+                            <option value="closer">Closer</option>
+                            <option value="admin">Admin</option>
+                        </select>
                     </div>
-                    <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="input-base shadow-sm !w-full md:!w-fit font-semibold cursor-pointer" />
+                    
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Employee Filter</label>
+                        <select value={selectedEmployee} onChange={(e) => setSelectedEmployee(e.target.value)} className="input-base cursor-pointer">
+                            <option value="all">
+                                All {selectedRoleFilter === 'all' ? 'Employees' : selectedRoleFilter === 'employee' ? 'Agents' : selectedRoleFilter === 'closer' ? 'Closers' : 'Admins'}
+                            </option>
+                            {filteredEmployeesByRole.map(emp => <option key={emp.id} value={emp.id}>{emp.full_name} ({emp.role.replace('_', ' ')})</option>)}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Status Filter</label>
+                        <select value={selectedStatusFilter} onChange={(e) => setSelectedStatusFilter(e.target.value)} className="input-base cursor-pointer">
+                            <option value="all">All Statuses</option>
+                            <option value="present">Present</option>
+                            <option value="absent">Absent</option>
+                            <option value="late">Late</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Filter Mode</label>
+                        <select value={filterMode} onChange={(e) => setFilterMode(e.target.value)} className="input-base cursor-pointer">
+                            <option value="date">Specific Date</option>
+                            <option value="range">Time Period (Range)</option>
+                        </select>
+                    </div>
+                </div>
+
+                {/* CONDITIONAL DATE PICKER INPUTS BASED ON MODE */}
+                <div className="pt-2 border-t border-gray-100 flex items-center gap-4">
+                    {filterMode === 'date' ? (
+                        <div className="w-full md:w-1/3">
+                            <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">Select Date</label>
+                            <input type="date" value={specificDate} onChange={(e) => setSpecificDate(e.target.value)} className="input-base shadow-sm !w-full font-semibold cursor-pointer" />
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 w-full md:w-2/3">
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">From Date</label>
+                                <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} className="input-base shadow-sm !w-full font-semibold cursor-pointer" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-2">To Date</label>
+                                <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} className="input-base shadow-sm !w-full font-semibold cursor-pointer" />
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -335,10 +430,10 @@ const AttendanceLogs = () => {
                         <tbody className="bg-white">
                             {loading ? (
                                 <tr><td colSpan="6" className="px-8 py-20 text-center text-prime-muted text-sm">Querying database...</td></tr>
-                            ) : displayData.length === 0 ? (
+                            ) : finalDisplayData.length === 0 ? (
                                 <tr><td colSpan="6" className="px-8 py-32 text-center text-prime-primary/60 text-sm font-medium">No records found.</td></tr>
                             ) : (
-                                displayData.map(({ uniqueKey, employee, log, recordDate }) => {
+                                finalDisplayData.map(({ uniqueKey, employee, log, recordDate }) => {
                                     const displayDateObj = recordDate ? new Date(recordDate) : new Date();
                                     const formattedDate = displayDateObj.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
@@ -360,32 +455,21 @@ const AttendanceLogs = () => {
                                     const cOut = (log.check_out && !isCheckedIn) ? new Date(log.check_out) : null;
                                     const timeObj = calculateTimeSpent(cIn, cOut, log.status);
 
-                                    const rules = officeSettings || {
-                                        standard: { start_time: "13:00", grace_mins: 10, req_hours: 9 },
-                                        friday: { start_time: "15:00", grace_mins: 10, req_hours: 7 },
-                                        saturday: { start_time: "14:00", grace_mins: 10, req_hours: 5.75 }
-                                    };
-
-                                    let isLate = false;
+                                    const isLate = checkIsLate(log);
                                     let isEarlyCheckout = false;
 
-                                    if (cIn) {
+                                    if (cIn && cOut && !isCheckedIn) {
+                                        const rules = officeSettings || {
+                                            standard: { req_hours: 9 },
+                                            friday: { req_hours: 7 },
+                                            saturday: { req_hours: 5.75 }
+                                        };
                                         const dayOfWeek = cIn.getDay(); 
                                         let dayProfile = rules.standard;
                                         if (dayOfWeek === 5) dayProfile = rules.friday;
                                         if (dayOfWeek === 6) dayProfile = rules.saturday;
 
-                                        const [startHour, startMin] = dayProfile.start_time.split(':').map(Number);
-                                        const cInHour = cIn.getHours();
-                                        const cInMin = cIn.getMinutes();
-                                        
-                                        if (cInHour > startHour || (cInHour === startHour && cInMin > startMin + dayProfile.grace_mins)) {
-                                            isLate = true;
-                                        }
-
-                                        if (cOut && !isCheckedIn) {
-                                            if (timeObj.mins < Math.floor(dayProfile.req_hours * 60)) isEarlyCheckout = true;
-                                        }
+                                        if (timeObj.mins < Math.floor(dayProfile.req_hours * 60)) isEarlyCheckout = true;
                                     }
                                     
                                     return (
@@ -409,7 +493,6 @@ const AttendanceLogs = () => {
                                                 : <span className="px-3 py-1 bg-orange-50 text-orange-600 rounded-full text-[10px] font-bold uppercase">Needs Approval</span>}
                                             </td>
                                             <td className="px-6 py-5 whitespace-nowrap text-right">
-                                                {/* 🚨 SECURITY LOCK VISUAL: Hide buttons completely if the Admin tries to edit their own log */}
                                                 {log.employee_id === user?.id ? (
                                                     <span className="text-xs text-red-400 font-semibold uppercase block mt-2">Cannot Self-Approve</span>
                                                 ) : (

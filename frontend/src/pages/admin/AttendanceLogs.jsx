@@ -32,8 +32,7 @@ const AttendanceLogs = () => {
     const [selectedRoleFilter, setSelectedRoleFilter] = useState('all'); 
     const [selectedEmployee, setSelectedEmployee] = useState('all');
     
-    // SEPARATE FILTERS: Specific Date vs Time Period (From/To)
-    const [filterMode, setFilterMode] = useState('date'); // 'date' or 'range'
+    const [filterMode, setFilterMode] = useState('date');
     const [specificDate, setSpecificDate] = useState(getLocalDateStr());
     const [fromDate, setFromDate] = useState(getLocalDateStr());
     const [toDate, setToDate] = useState(getLocalDateStr());
@@ -51,6 +50,10 @@ const AttendanceLogs = () => {
     const [editCheckOut, setEditCheckOut] = useState('');
 
     const [now, setNow] = useState(new Date());
+
+    // NEW: Client-side Pagination States
+    const [page, setPage] = useState(1);
+    const limit = 50;
     
     useEffect(() => {
         const interval = setInterval(() => setNow(new Date()), 60000);
@@ -83,6 +86,11 @@ const AttendanceLogs = () => {
         };
         fetchSettings();
     }, []);
+
+    // Reset pagination to page 1 whenever any filter changes
+    useEffect(() => {
+        setPage(1);
+    }, [selectedRoleFilter, selectedEmployee, selectedStatusFilter, filterMode, specificDate, fromDate, toDate]);
 
     const fetchAttendanceData = async () => {
         setLoading(true);
@@ -211,38 +219,45 @@ const AttendanceLogs = () => {
     };
 
     const checkIsLate = (log) => {
-    if (!log || !log.check_in) return false;
-    
-    // Force the check-in time to evaluate strictly in PKT time
-    const cIn = new Date(log.check_in);
-    const pktTimeStr = cIn.toLocaleString('en-US', { timeZone: 'Asia/Karachi', hour12: false });
-    const timePart = pktTimeStr.split(', ')[1]; // Extracts HH:MM:SS
-    if (!timePart) return false;
-    
-    const [cInHour, cInMin] = timePart.split(':').map(Number);
+        if (!log || !log.check_in) return false;
+        
+        const cIn = new Date(log.check_in);
+        const pktTimeStr = cIn.toLocaleString('en-US', { timeZone: 'Asia/Karachi', hour12: false });
+        
+        // Handle variations in browser's local string format (safeguard extraction)
+        const timePart = pktTimeStr.includes(', ') ? pktTimeStr.split(', ')[1] : pktTimeStr.split(' ')[1];
+        if (!timePart) return false;
+        
+        const [cInHour, cInMin] = timePart.split(':').map(Number);
 
-    const rules = officeSettings || {
-        standard: { start_time: "13:00", grace_mins: 10, req_hours: 9 },
-        friday: { start_time: "15:00", grace_mins: 10, req_hours: 7 },
-        saturday: { start_time: "14:00", grace_mins: 10, req_hours: 5.75 }
+        const rules = officeSettings || {
+            standard: { start_time: "13:00", grace_mins: 10, req_hours: 9 },
+            friday: { start_time: "15:00", grace_mins: 10, req_hours: 7 },
+            saturday: { start_time: "14:00", grace_mins: 10, req_hours: 5.75 }
+        };
+
+        const dayOfWeekStr = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Karachi', weekday: 'short' }).format(cIn);
+        let dayOfWeek = cIn.getDay();
+        if (dayOfWeekStr === 'Sun') dayOfWeek = 0;
+        else if (dayOfWeekStr === 'Mon') dayOfWeek = 1;
+        else if (dayOfWeekStr === 'Tue') dayOfWeek = 2;
+        else if (dayOfWeekStr === 'Wed') dayOfWeek = 3;
+        else if (dayOfWeekStr === 'Thu') dayOfWeek = 4;
+        else if (dayOfWeekStr === 'Fri') dayOfWeek = 5;
+        else if (dayOfWeekStr === 'Sat') dayOfWeek = 6;
+
+        let dayProfile = rules.standard;
+        if (dayOfWeek === 5) dayProfile = rules.friday;
+        if (dayOfWeek === 6) dayProfile = rules.saturday;
+
+        if (!dayProfile || !dayProfile.start_time) return false;
+
+        const [startHour, startMin] = dayProfile.start_time.split(':').map(Number);
+        const totalGraceMinutes = (startHour * 60 + startMin) + (dayProfile.grace_mins || 10);
+        const actualCheckInMinutes = cInHour * 60 + cInMin;
+
+        return actualCheckInMinutes > totalGraceMinutes;
     };
-
-    // Determine day of week in PKT
-    const pktDateOptions = { timeZone: 'Asia/Karachi', weekday: 'numeric' };
-    const dayOfWeek = parseInt(new Intl.DateTimeFormat('en-US', { ...pktDateOptions, weekday: 'narrow' }).format(cIn)) || cIn.getDay();
-
-    let dayProfile = rules.standard;
-    if (dayOfWeek === 5) dayProfile = rules.friday;
-    if (dayOfWeek === 6) dayProfile = rules.saturday;
-
-    if (!dayProfile || !dayProfile.start_time) return false;
-
-    const [startHour, startMin] = dayProfile.start_time.split(':').map(Number);
-    const totalGraceMinutes = (startHour * 60 + startMin) + (dayProfile.grace_mins || 10);
-    const actualCheckInMinutes = cInHour * 60 + cInMin;
-
-    return actualCheckInMinutes > totalGraceMinutes;
-};
 
     const filteredEmployeesByRole = employees.filter(emp => {
         if (selectedRoleFilter === 'all') return true;
@@ -286,6 +301,10 @@ const AttendanceLogs = () => {
         if (selectedStatusFilter === 'late') return item.log && checkIsLate(item.log);
         return true;
     });
+
+    // Handle Client-Side Pagination
+    const totalRecords = finalDisplayData.length;
+    const paginatedData = finalDisplayData.slice((page - 1) * limit, page * limit);
 
     const handleExportCSV = () => {
         if (finalDisplayData.length === 0) {
@@ -443,10 +462,10 @@ const AttendanceLogs = () => {
                         <tbody className="bg-white">
                             {loading ? (
                                 <tr><td colSpan="6" className="px-8 py-20 text-center text-prime-muted text-sm">Querying database...</td></tr>
-                            ) : finalDisplayData.length === 0 ? (
+                            ) : paginatedData.length === 0 ? (
                                 <tr><td colSpan="6" className="px-8 py-32 text-center text-prime-primary/60 text-sm font-medium">No records found.</td></tr>
                             ) : (
-                                finalDisplayData.map(({ uniqueKey, employee, log, recordDate }) => {
+                                paginatedData.map(({ uniqueKey, employee, log, recordDate }) => {
                                     const displayDateObj = recordDate ? new Date(recordDate) : new Date();
                                     const formattedDate = displayDateObj.toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
@@ -477,10 +496,10 @@ const AttendanceLogs = () => {
                                             friday: { req_hours: 7 },
                                             saturday: { req_hours: 5.75 }
                                         };
-                                        const dayOfWeek = cIn.getDay(); 
+                                        const dayOfWeekStr = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Karachi', weekday: 'short' }).format(cIn);
                                         let dayProfile = rules.standard;
-                                        if (dayOfWeek === 5) dayProfile = rules.friday;
-                                        if (dayOfWeek === 6) dayProfile = rules.saturday;
+                                        if (dayOfWeekStr === 'Fri') dayProfile = rules.friday;
+                                        if (dayOfWeekStr === 'Sat') dayProfile = rules.saturday;
 
                                         if (timeObj.mins < Math.floor(dayProfile.req_hours * 60)) isEarlyCheckout = true;
                                     }
@@ -545,6 +564,27 @@ const AttendanceLogs = () => {
                             )}
                         </tbody>
                     </table>
+                </div>
+
+                {/* Pagination Controls Footer */}
+                <div className="flex justify-between items-center px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl mt-auto">
+                    <span className="text-xs text-gray-500 font-medium">Page {page} • Showing {paginatedData.length} of {totalRecords} records</span>
+                    <div className="flex gap-2">
+                        <button 
+                            disabled={page === 1} 
+                            onClick={() => setPage(page - 1)} 
+                            className="px-4 py-1.5 text-xs font-semibold shadow-sm bg-white border border-gray-200 rounded text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+                        >
+                            Previous
+                        </button>
+                        <button 
+                            disabled={page * limit >= totalRecords} 
+                            onClick={() => setPage(page + 1)} 
+                            className="px-4 py-1.5 text-xs font-semibold shadow-sm bg-white border border-gray-200 rounded text-gray-600 disabled:opacity-50 hover:bg-gray-50"
+                        >
+                            Next
+                        </button>
+                    </div>
                 </div>
             </div>
         </PageWrapper>

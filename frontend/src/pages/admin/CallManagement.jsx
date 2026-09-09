@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { formatDate } from '../../utils/formatters';
 import apiClient from '../../services/apiClient';
 import Button from '../../components/common/Button';
 import Modal from '../../components/common/Modal';
 import PageWrapper from '../../components/layout/PageWrapper';
 import { supabase } from '../../services/supabaseClient';
 import { useAuth } from '../../context/AuthContext';
+
+const formatCallDate = (dateStr) => {
+    if (!dateStr) return 'N/A';
+    const d = new Date(dateStr);
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const weekday = days[d.getDay()];
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    return `${weekday}, ${day}-${month}-${year}`;
+};
 
 const CallManagement = () => {
     const { user } = useAuth();
@@ -42,7 +52,6 @@ const CallManagement = () => {
     const fetchCallsAndUsers = async () => {
         setLoading(true);
         try {
-            // Fetch dynamically based on role
             const endpoint = user?.role === 'employee'
                 ? `/api/v1/calls/me?page=${page}&limit=${limit}`
                 : `/api/v1/calls/?page=${page}&limit=${limit}`;
@@ -69,12 +78,10 @@ const CallManagement = () => {
         }
     };
 
-    // Refetch when page changes
     useEffect(() => {
         fetchCallsAndUsers();
     }, [page]);
 
-    // Setup real-time listener ONLY once on mount
     useEffect(() => {
         const callsChannel = supabase
             .channel('call-management-live')
@@ -189,7 +196,7 @@ const CallManagement = () => {
                 await apiClient.put(`/api/v1/calls/${currentCallId}`, payload);
             }
             setIsModalOpen(false);
-            fetchCallsAndUsers(); // Refetch to guarantee correct page sync
+            fetchCallsAndUsers(); 
         } catch (err) {
             setError('Failed to save call log.');
         } finally {
@@ -447,7 +454,7 @@ const CallManagement = () => {
                                 filteredCalls.map((call) => (
                                     <tr key={call.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/30 transition-colors">
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">
-                                            {formatDate(call.date)}
+                                            {formatCallDate(call.date)}
                                         </td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap font-bold text-gray-800 text-sm">{call.client_name}</td>
                                         <td className="px-4 md:px-6 py-5 whitespace-nowrap text-gray-500 font-medium text-sm">{getEmployeeName(call)}</td>
@@ -488,7 +495,7 @@ const CallManagement = () => {
                     </table>
                 </div>
 
-                {/* 🚨 Pagination Controls Footer */}
+                {/* Pagination Controls Footer */}
                 <div className="flex justify-between items-center px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-2xl mt-auto">
                     <span className="text-xs text-gray-500 font-medium">Page {page} • Showing {calls.length} of {totalRecords} records</span>
                     <div className="flex gap-2">

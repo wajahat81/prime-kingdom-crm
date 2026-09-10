@@ -13,23 +13,27 @@ const Login = () => {
     const [showPassword, setShowPassword] = useState(false);
     
     const navigate = useNavigate();
-    // 🚨 FIX: Destructure isAuthenticated from useAuth
-    const { login, isAuthenticated } = useAuth();
+    
+    // 🚨 ADDED: Destructure `logout` from useAuth
+    const { login, logout, isAuthenticated } = useAuth();
 
-    // 🚨 FIX: Instantly bounce logged-in users to the dashboard
-    useEffect(() => {
-        if (isAuthenticated) {
-            navigate('/dashboard', { replace: true });
-        }
-    }, [isAuthenticated, navigate]);
-
-    // Check if the user was redirected here due to an expired session
+    // 1. First, check if the session expired and forcefully wipe state
     useEffect(() => {
         const queryParams = new URLSearchParams(window.location.search);
         if (queryParams.get('expired') === 'true') {
             setExpiredMessage('Your session has expired. Please sign in again.');
+            // Call the logout function from your context to wipe isAuthenticated state
+            if (logout) logout(); 
         }
-    }, []);
+    }, [logout]);
+
+    // 2. Only bounce to dashboard if they are authenticated AND not actively expiring
+    useEffect(() => {
+        const queryParams = new URLSearchParams(window.location.search);
+        if (isAuthenticated && queryParams.get('expired') !== 'true') {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [isAuthenticated, navigate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();

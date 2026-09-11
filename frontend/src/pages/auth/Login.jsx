@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Button from '../../components/common/Button';
@@ -11,26 +11,38 @@ const Login = () => {
     const [expiredMessage, setExpiredMessage] = useState('');
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    
+
+    // Add a ref to track if we are currently handling an expiration reset
+    const isWipingState = useRef(false);
+
     const navigate = useNavigate();
-    
-    // 🚨 ADDED: Destructure `logout` from useAuth
+
     const { login, logout, isAuthenticated } = useAuth();
 
-    // 1. First, check if the session expired and forcefully wipe state
+    // 1. Synchronously check URL on mount
     useEffect(() => {
         const queryParams = new URLSearchParams(window.location.search);
         if (queryParams.get('expired') === 'true') {
+            isWipingState.current = true;
             setExpiredMessage('Your session has expired. Please sign in again.');
-            // Call the logout function from your context to wipe isAuthenticated state
-            if (logout) logout(); 
+
+            // Wipe everything directly to ensure no race conditions
+            localStorage.removeItem('user');
+            if (logout) logout();
+
+            // Clean the URL so a manual refresh doesn't trigger it again
+            window.history.replaceState({}, document.title, window.location.pathname);
+
+            // Release the lock after state has had time to settle
+            setTimeout(() => {
+                isWipingState.current = false;
+            }, 500);
         }
     }, [logout]);
 
-    // 2. Only bounce to dashboard if they are authenticated AND not actively expiring
+    // 2. Only bounce to dashboard if authenticated AND we aren't wiping state
     useEffect(() => {
-        const queryParams = new URLSearchParams(window.location.search);
-        if (isAuthenticated && queryParams.get('expired') !== 'true') {
+        if (isAuthenticated && !isWipingState.current) {
             navigate('/dashboard', { replace: true });
         }
     }, [isAuthenticated, navigate]);
@@ -90,21 +102,21 @@ const Login = () => {
                                     className="input-base"
                                 />
                             </div>
-                            
+
                             <div>
                                 <label className="block text-xs font-semibold text-prime-muted uppercase tracking-wider mb-2 ml-1">
                                     Password
                                 </label>
-                                
+
                                 <div className="relative">
                                     <input
                                         type={showPassword ? "text" : "password"}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         placeholder="Enter your password"
-                                        className="input-base pr-10 w-full" 
+                                        className="input-base pr-10 w-full"
                                     />
-                                    
+
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}

@@ -33,7 +33,12 @@ const CallLogUpload = () => {
 
                 const sortedAgents = data.filter(u => u.role === 'employee' || u.role === 'closer').sort(sortByName);
                 const sortedClosers = data.filter(u => u.role === 'closer').sort(sortByName);
+                const agentsList = data.filter(u => u.role === 'employee' || u.role === 'closer').sort(sortByName);
+                const active = agentsList.filter(u => u.is_active !== false && u.status !== 'terminated');
+                const terminated = agentsList.filter(u => u.is_active === false || u.status === 'terminated');
 
+                setActiveAgents(active);
+                setTerminatedAgents(terminated);
                 setAgents(sortedAgents);
                 setClosers(sortedClosers);
                 setLoadingEmployees(false);
